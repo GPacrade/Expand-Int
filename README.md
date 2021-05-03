@@ -15,4 +15,4 @@ if you wanna unsigned int, add `u` to name near int `expand_uint<0>` & `uint128_
 
 # 
 
-This project use [this](http://github.com/calccrypto/uint256_t/ "calccrypto uint256_t repo") repo for base
+This project use [this](http://github.com/calccrypto/uint256_t/ "calccrypto uint256_t repo") repo as base
