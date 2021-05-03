@@ -1,4 +1,4 @@
-# Expand-Int
+# Expand Int
 Expandable integer for c++ 
 
 
