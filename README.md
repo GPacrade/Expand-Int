@@ -12,3 +12,7 @@ For example `expand_int<0>` will be equal 128 bit size, `expand_int<1>` is 256 b
 just use `expand_int<0>` or `int128_ext` as value type
 
 if you wanna unsigned int, add `u` to name near int `expand_uint<0>` & `uint128_ext`
+
+# 
+
+This project use [this](http://github.com/calccrypto/uint256_t/ "calccrypto uint256_t repo") repo for base
