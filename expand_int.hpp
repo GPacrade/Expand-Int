@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <malloc.h>
 #include <utility>
+#include <regex>
 #include <stdexcept>
 
 #define IS_BIG_ENDIAN (!(union { uint16_t u16; unsigned char c; }){ .u16 = 1 }.c)
@@ -81,7 +82,7 @@ public:
             *this += str[i] - '0';
         }
     }
-    std::string to_ansi_string() {
+    std::string to_ansi_string() const {
         std::string res;
         {
             expand_uint tmp = *this;
@@ -97,7 +98,7 @@ public:
         std::reverse(res.begin(), res.end());
         return res;
     }
-    std::string to_ansi_string(uint8_t base) {
+    std::string to_ansi_string(uint8_t base) const {
         if ((base < 2) || (base > 36)) {
             throw std::invalid_argument("Base must be in the range 2-36");
         }
@@ -893,29 +894,32 @@ class expand_int {
         else return *this;
     }
 
-    union to_constructor{
-#ifdef IS_BIG_ENDIAN
-        bool is_minus : 1;
-#else
+    union for_constructor{
         struct s {
-            bool unused : sizeof(expand_uint<byte_expand>) * 8 - 1;
+#ifdef IS_BIG_ENDIAN
+            uint64_t unused : 63;
+            uint64_t _is_minus : 1;
+#else
             bool _is_minus : 1;
-
+#endif
+        public:
             s() {
 
             }
             s(bool val) {
                 _is_minus = val;
+            } 
+            void operator = (bool val) {
+                _is_minus = val;
             }
-            operator bool() {
+            operator bool() const {
                 return _is_minus;
             }
         } is_minus;
-#endif
-
 
         expand_uint<byte_expand> unsigned_int;
-        to_constructor() {}
+        for_constructor() {
+        }
     } val;
     static expand_int get_min() {
         expand_int tmp = 0;
@@ -963,7 +967,7 @@ public:
         else 
             return val.unsigned_int.to_ansi_string();
     }
-    std::string to_hex_str() {
+    std::string to_hex_str() const {
         return val.unsigned_int.to_ansi_string();
     }
 
@@ -1168,8 +1172,14 @@ public:
             else
                 val.unsigned_int -= rhs.val.unsigned_int;
         }
-        else
-            val.unsigned_int -= rhs.val.unsigned_int;
+        else {
+            if(val.unsigned_int>= rhs.val.unsigned_int)
+                val.unsigned_int -= rhs.val.unsigned_int;
+            else {
+                val.unsigned_int = rhs.val.unsigned_int - val.unsigned_int;
+                switch_my_siqn();
+            }
+        }
         return *this;
     }
 
@@ -1189,6 +1199,18 @@ public:
             val.unsigned_int *= rhs.val.unsigned_int;
         return *this;
     }
+
+
+
+
+    expand_int operator+() const {
+        return expand_int(*this).switch_to_unsiqn();
+    }
+    expand_int  operator-() const {
+        return expand_int(*this).switch_to_siqn();
+    }
+
+
     explicit operator bool() const {
         return (bool)val.unsigned_int;
     }
@@ -1235,4 +1257,471 @@ typedef expand_int<6> int1024_exb;
 typedef expand_int<7> int2048_exb;
 typedef expand_int<8> int4096_exb;
 
-//TO-DO expand_real<>
+
+
+
+
+
+
+
+
+template<uint64_t byte_expand>
+class expand_real {
+    union for_constructor {
+
+        struct s {
+#ifdef IS_BIG_ENDIAN
+            uint64_t unused : 63 - (byte_expand >= 63 ? 64 : (5 + byte_expand));
+            uint64_t _dot_pos : (byte_expand >= 63 ? 64 : (5 + byte_expand));
+            uint64_t _is_minus : 1;
+#else
+            uint64_t _is_minus : 1;
+            uint64_t _dot_pos : (byte_expand >= 63 ? 64 : (5 + byte_expand));
+#endif
+        public:
+            s() {
+
+            }
+            s(uint64_t val) {
+                _dot_pos = val;
+            }
+            void operator = (uint64_t val) {
+                _dot_pos = val;
+            }
+            operator uint64_t() const {
+                return _dot_pos;
+            }
+            bool is_minus() const {
+                return _is_minus;
+            }
+        } dot_pos;
+        expand_int<byte_expand> signed_int;
+        for_constructor() {}
+    } val;
+
+
+    static std::vector<std::string> split_dot(std::string value) {
+        static const std::regex rdelim{ "." };
+        std::vector<std::string> strPairs{
+                std::sregex_token_iterator(value.begin(), value.end(), rdelim, -1),
+                std::sregex_token_iterator()
+        };
+        return strPairs;
+    }
+
+    uint64_t temp_denormalize_struct() {
+        uint64_t tmp = val.dot_pos;
+        val.dot_pos = 0;
+        return tmp;
+    }
+    void normalize_struct(uint64_t value) {
+        val.dot_pos = value;
+    }
+    void normalize_dot() {
+        if (val.dot_pos == 0) 
+            return;
+        std::string tmp_this_value = to_ansi_string();
+        expand_real remove_nuls_mult(10);
+        expand_real remove_nuls(1);
+        size_t nul_count = 0;
+        for (int64_t i = tmp_this_value.length() - 1; i >= 0; i--)
+        {
+            if (tmp_this_value[i] != '0')
+                break;
+            else {
+                remove_nuls *= remove_nuls_mult;
+                nul_count++;
+            }
+        }
+        uint64_t modify_dot = temp_denormalize_struct() - nul_count;
+        if (nul_count)
+            div(remove_nuls,false);
+        normalize_struct(modify_dot);
+    }
+
+    void div(const expand_real& rhs, bool do_normalize_dot = true) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_real tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+
+        this_dot_pos -= rhs_dot_pos;
+
+
+        expand_int<byte_expand> move_tmp = 10;
+        expand_real shift_tmp;
+        shift_tmp.val.dot_pos = -1;
+        while (true) {
+            if (val.signed_int % tmp.val.signed_int) {
+                this_dot_pos++;
+                if (this_dot_pos!=shift_tmp.val.dot_pos) {
+                    val.signed_int = val.signed_int * move_tmp;
+                    continue;
+                }
+                this_dot_pos--;
+            }
+            val.signed_int /= tmp.val.signed_int;
+            break;
+        }
+        normalize_struct(this_dot_pos);
+        if (do_normalize_dot)
+            normalize_dot();
+    }
+    void mod(const expand_real& rhs, bool do_normalize_dot = true) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_real tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+
+        this_dot_pos -= rhs_dot_pos;
+
+
+        expand_int<byte_expand> move_tmp = 10;
+        expand_real shift_tmp;
+        shift_tmp.val.dot_pos = -1;
+        while (true) {
+            if (val.signed_int % tmp.val.signed_int) {
+                this_dot_pos++;
+                if (this_dot_pos != shift_tmp.val.dot_pos) {
+                    val.signed_int = val.signed_int * move_tmp;
+                    continue;
+                }
+                this_dot_pos--;
+            }
+            val.signed_int %= tmp.val.signed_int;
+            break;
+        }
+        normalize_struct(this_dot_pos);
+        if (do_normalize_dot)
+            normalize_dot();
+    }
+    static expand_real get_min() {
+        expand_real tmp = 0;
+        tmp.val.signed_int = expand_int<byte_expand>::min;
+        tmp.val.dot_pos = -1;
+        return tmp;
+    }
+    static expand_real get_max() {
+        expand_real tmp = 0;
+        tmp.val.signed_int = expand_int<byte_expand>::max;
+        tmp.val.dot_pos = 0;
+        return tmp;
+    }
+public:
+    static expand_real min;
+    static expand_real max;
+
+    expand_real() {
+        val.signed_int = 0;
+    }
+    expand_real(const expand_real& rhs) = default;
+    expand_real(expand_real&& rhs) = default;
+    expand_real(const char* str) {
+        *this = std::string(str);
+    }
+    expand_real(const std::string str) {
+        size_t found_pos = str.find('.');
+        if (found_pos == std::string::npos)
+        {
+            val.signed_int = expand_int<byte_expand>(str.c_str());
+            val.dot_pos = 0;
+        }
+        else {
+            //check str for second dot
+            if (str.find('.', found_pos) == std::string::npos)
+                throw std::invalid_argument("Real value can contain only one dot");
+
+            std::string tmp = str;
+            tmp.erase(tmp.begin() + found_pos);
+            val.signed_int = expand_int<byte_expand>(tmp.c_str());
+            val.dot_pos = (str.length() - found_pos - 1);
+        }
+        normalize_struct(temp_denormalize_struct());
+    }
+    template <typename T>
+    expand_real(const T& rhs)
+    {
+        val.signed_int = rhs;
+    }
+    std::string to_ansi_string() {
+        uint64_t tmp = temp_denormalize_struct();
+        bool has_minus = val.dot_pos.is_minus();
+        if (has_minus)
+            val.dot_pos = -1;
+
+        std::string str = val.signed_int.to_ansi_string();
+        if (has_minus)
+            str.erase(str.begin());
+        normalize_struct(tmp);
+        if (val.dot_pos) {
+            if (str.length() <= val.dot_pos) {
+                uint64_t resize_result_len = val.dot_pos - str.length() + 1;
+                std::string to_add_zeros;
+                while (resize_result_len--)
+                    to_add_zeros += '0';
+                str = to_add_zeros + str;
+            }
+            str.insert(str.end() - tmp, '.');
+        }
+        return (has_minus?"-":"")+str;
+    }
+    std::string to_ansi_string() const {
+        return expand_real(*this).to_ansi_string();
+    }
+    std::string to_hex_str() const {
+        return val.signed_int.to_hex_str();
+    }
+
+    expand_real& operator=(const expand_real& rhs) = default;
+    expand_real& operator=(expand_real&& rhs) = default;
+
+
+
+
+
+
+
+
+    expand_real operator&(const expand_real& rhs) const {
+        return expand_real(*this) &= rhs;
+    }
+
+    expand_real& operator&=(const expand_real& rhs) {
+        val.signed_int &= rhs.val.signed_int;
+        return *this;
+    }
+
+    expand_real operator|(const expand_real& rhs) const {
+        return expand_real(*this) |= rhs;
+    }
+
+    expand_real& operator|=(const expand_real& rhs) {
+        val.signed_int |= rhs.val.signed_int;
+        return *this;
+    }
+
+    expand_real operator^(const expand_real& rhs) const {
+        return expand_real(*this) ^= rhs;
+    }
+
+    expand_real& operator^=(const expand_real& rhs) {
+        val.signed_int ^= rhs.val.signed_int;
+        return *this;
+    }
+
+    expand_real operator~() const {
+        expand_real tmp(*this);
+        ~tmp.val.signed_int;
+        return tmp;
+    }
+
+
+
+    expand_real& operator<<=(uint64_t shift) {
+        val.signed_int <<= shift;
+        return *this;
+    }
+    expand_real operator<<(uint64_t shift) const {
+        return expand_real(*this) <<= shift;
+    }
+
+
+    expand_real& operator>>=(uint64_t shift) {
+        val.signed_int >>= shift;
+        return *this;
+    }
+    expand_real operator>>(uint64_t shift) const {
+        return expand_real(*this) >>= shift;
+    }
+    bool operator!() const {
+        return !val.signed_int;
+    }
+
+    bool operator&&(const expand_real& rhs) const {
+        return ((bool)*this && rhs);
+    }
+
+    bool operator||(const expand_real& rhs) const {
+        return ((bool)*this || rhs);
+    }
+
+    bool operator==(const expand_real& rhs) const {
+        return val.signed_int == rhs.val.signed_int;
+    }
+
+    bool operator!=(const expand_real& rhs) const {
+        return val.signed_int != rhs.val.signed_int;
+    }
+
+    bool operator>(const expand_real& rhs) const {
+        std::vector<std::string> this_parts = split_dot(to_ansi_string());
+        std::vector<std::string> rhs_parts = split_dot(rhs.to_ansi_string());
+        {
+            expand_int<byte_expand> temp1(this_parts[0].c_str());
+            expand_int<byte_expand> temp2(rhs_parts[0].c_str());
+            if (temp1 == temp2);
+            else return temp1 > temp2;
+        }
+        if (this_parts.size() == 2 && rhs_parts.size() == 2) {
+            expand_int<byte_expand> temp1(this_parts[1].c_str());
+            expand_int<byte_expand> temp2(rhs_parts[1].c_str());
+            return temp1 > temp2;
+        }
+        else
+            return this_parts.size() > rhs_parts.size();
+    }
+
+    bool operator<(const expand_real& rhs) const {
+        return !(*this > rhs) && *this != rhs;
+    }
+
+    bool operator>=(const expand_real& rhs) const {
+        return ((*this > rhs) | (*this == rhs));
+    }
+
+    bool operator<=(const expand_real& rhs) const {
+        return !(*this > rhs);
+    }
+
+
+    expand_real& operator++() {
+        return *this += 1;
+    }
+    expand_real operator++(int) {
+        expand_real temp(*this);
+        *this += 1;
+        return temp;
+    }
+    expand_real operator+(const expand_real& rhs) const {
+        return expand_real(*this) += rhs;
+    }
+    expand_real operator-(const expand_real& rhs) const {
+        return expand_real(*this) -= rhs;
+    }
+
+    expand_real& operator+=(const expand_real& rhs) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_real tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+        if (this_dot_pos == rhs_dot_pos);
+        else if (this_dot_pos > rhs_dot_pos) {
+            expand_int<byte_expand> move_tmp = 1;
+            while (this_dot_pos != rhs_dot_pos++)
+                move_tmp *= 10;
+            tmp.val.signed_int *= move_tmp;
+        }
+        else {
+            expand_int<byte_expand> move_tmp = 1;
+            while (rhs_dot_pos != this_dot_pos++)
+                move_tmp *= 10;
+            val.signed_int *= move_tmp;
+        }
+        val.signed_int += tmp.val.signed_int;
+        normalize_struct(this_dot_pos);
+        normalize_dot();
+        return *this;
+    }
+    expand_real& operator-=(const expand_real& rhs) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_real tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+        if (this_dot_pos == rhs_dot_pos);
+        else if (this_dot_pos > rhs_dot_pos) {
+            expand_int<byte_expand> move_tmp = 1;
+            while (this_dot_pos != rhs_dot_pos++)
+                move_tmp *= 10;
+            tmp.val.signed_int *= move_tmp;
+        }
+        else {
+            expand_int<byte_expand> move_tmp = 1;
+            while (rhs_dot_pos != this_dot_pos++)
+                move_tmp *= 10;
+            val.signed_int *= move_tmp;
+        }
+        val.signed_int -= tmp.val.signed_int;
+        normalize_struct(this_dot_pos);
+        normalize_dot();
+        return *this;
+    }
+
+    expand_real operator*(const expand_real& rhs) const {
+        return expand_real(*this) *= rhs;
+    }
+
+
+    expand_real& operator*=(const expand_real& rhs) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_real tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+        this_dot_pos += rhs_dot_pos;
+
+        val.signed_int *= tmp.val.signed_int;
+
+        normalize_struct(this_dot_pos);
+        normalize_dot();
+        return *this;
+    }
+
+
+
+
+    expand_real operator/(const expand_real& rhs) const {
+        return expand_real(*this) /= rhs;
+    }
+
+    expand_real& operator/=(const expand_real& rhs) {
+        div(rhs);
+        return *this;
+    }
+
+    expand_real operator%(const expand_real& rhs) const {
+        return expand_real(*this) %= rhs;
+    }
+
+    expand_real& operator%=(const expand_real& rhs) {
+        mod(rhs);
+        return *this;
+    }
+
+    explicit operator bool() const {
+        return (bool)val.signed_int;
+    }
+    explicit operator uint8_t() const {
+        return (uint8_t)val.signed_int;
+    }
+    explicit operator uint16_t() const {
+        return (uint16_t)val.signed_int;
+    }
+    explicit operator uint32_t() const {
+        return (uint32_t)val.signed_int;
+    }
+    explicit operator uint64_t() const {
+        return (uint64_t)val.signed_int;
+    }
+};
+
+template<uint64_t byte_expand>
+expand_real<byte_expand> expand_real<byte_expand>::min = expand_real<byte_expand>::get_min();
+
+template<uint64_t byte_expand>
+expand_real<byte_expand> expand_real<byte_expand>::max = expand_real<byte_expand>::get_max();
+
+
+
+typedef expand_real<0> real128_ext;
+typedef expand_real<1> real256_ext;
+typedef expand_real<2> real512_ext;
+typedef expand_real<3> real1024_ext;
+typedef expand_real<4> real2048_ext;
+typedef expand_real<5> real4096_ext;
+typedef expand_real<6> real8192_ext;
+typedef expand_real<7> real16384_ext;
+typedef expand_real<8> real32768_ext;
+
+typedef expand_real<0> real16_exb;
+typedef expand_real<1> real32_exb;
+typedef expand_real<2> real64_exb;
+typedef expand_real<3> real128_exb;
+typedef expand_real<4> real256_exb;
+typedef expand_real<5> real512_exb;
+typedef expand_real<6> real1024_exb;
+typedef expand_real<7> real2048_exb;
+typedef expand_real<8> real4096_exb;
