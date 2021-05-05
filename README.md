@@ -2,7 +2,7 @@
 Expandable integer for c++ 
 
 
-This repozitory realizate expandable unsigned and signed int with fixed bits count use templates.
+This repozitory realizate expandable unsigned, signed and *real* int with fixed bits count use templates.
 
 For example `expand_int<0>` will be equal 128 bit size, `expand_int<1>` is 256 bits, `expand_int<2>` is 512 bits, e.t.c.
 
