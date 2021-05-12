@@ -31,12 +31,62 @@ class expand_uint;
 template<>
 class expand_uint<0> {
 #ifdef IS_BIG_ENDIAN
-    uint64_t UPPER;
     uint64_t LOWER;
+    uint64_t UPPER;
 #else
-    uint64_t LOWER;
     uint64_t UPPER;
+    uint64_t LOWER;
 #endif
+    uint64_t bits() const {
+        uint64_t out = 0;
+        if (UPPER) {
+            out = 64;
+            uint64_t up = UPPER;
+            while (up) {
+                up >>= 1;
+                out++;
+            }
+        }
+        else {
+            uint64_t low = LOWER;
+            while (low) {
+                low >>= 1;
+                out++;
+            }
+        }
+        return out;
+    }
+    std::pair <expand_uint, expand_uint> divmod(const expand_uint& lhs, const expand_uint& rhs) const {
+        // Save some calculations /////////////////////
+        if (rhs == exint_0) {
+            throw std::domain_error("Error: division or modulus by 0");
+        }
+        else if (rhs == exint_1) {
+            return std::pair <expand_uint, expand_uint>(lhs, exint_0);
+        }
+        else if (lhs == rhs) {
+            return std::pair <expand_uint, expand_uint>(exint_1, exint_0);
+        }
+        else if ((lhs == exint_0) || (lhs < rhs)) {
+            return std::pair <expand_uint, expand_uint>(exint_0, lhs);
+        }
+
+        std::pair <expand_uint, expand_uint> qr(exint_0, exint_0);
+        for (uint64_t x = lhs.bits(); x > 0; x--) {
+            qr.first <<= 1;
+            qr.second <<= 1;
+
+            if ((lhs >> (x - 1U)) & exint_1) {
+                ++qr.second;
+            }
+
+            if (qr.second >= rhs) {
+                qr.second -= rhs;
+                ++qr.first;
+            }
+        }
+        return qr;
+    }
 
 public:
     expand_uint static get_min() {
@@ -78,7 +128,7 @@ public:
                 proxy[i] = rhs_proxy[i];
     }
 
-    expand_uint(const long long rhs) : UPPER(0), LOWER(rhs){}
+    expand_uint(const long long rhs) : UPPER(0), LOWER(rhs) {}
     expand_uint(const unsigned long long rhs) : UPPER(0), LOWER(rhs) {}
     expand_uint(const unsigned int rhs) : UPPER(0), LOWER(rhs) {}
     expand_uint(const double rhs) : UPPER(0), LOWER(rhs) {}
@@ -130,60 +180,16 @@ public:
         return out;
     }
 
+    std::string to_hex_str() const {
+        uint64_t* proxy = ((uint64_t*)this);
+        std::stringstream stream;
+        for (int64_t i = expand_bits() / 64 - 1; i >= 0; --i)
+            stream << n2hexstr(proxy[i]);
+        return "0x" + stream.str();
+    }
+
     expand_uint& operator=(const expand_uint& rhs) = default;
     expand_uint& operator=(expand_uint&& rhs) = default;
-
-    uint64_t bits() const {
-        uint64_t out = 0;
-        if (UPPER) {
-            out = 64;
-            uint64_t up = UPPER;
-            while (up) {
-                up >>= 1;
-                out++;
-            }
-        }
-        else {
-            uint64_t low = LOWER;
-            while (low) {
-                low >>= 1;
-                out++;
-            }
-        }
-        return out;
-    }
-    std::pair <expand_uint, expand_uint> divmod(const expand_uint& lhs, const expand_uint& rhs) const {
-        // Save some calculations /////////////////////
-        if (rhs == exint_0) {
-            throw std::domain_error("Error: division or modulus by 0");
-        }
-        else if (rhs == exint_1) {
-            return std::pair <expand_uint, expand_uint>(lhs, exint_0);
-        }
-        else if (lhs == rhs) {
-            return std::pair <expand_uint, expand_uint>(exint_1, exint_0);
-        }
-        else if ((lhs == exint_0) || (lhs < rhs)) {
-            return std::pair <expand_uint, expand_uint>(exint_0, lhs);
-        }
-
-        std::pair <expand_uint, expand_uint> qr(exint_0, exint_0);
-        for (uint64_t x = lhs.bits(); x > 0; x--) {
-            qr.first <<= 1;
-            qr.second <<= 1;
-
-            if ((lhs >> (x - 1U)) & exint_1) {
-                ++qr.second;
-            }
-
-            if (qr.second >= rhs) {
-                qr.second -= rhs;
-                ++qr.first;
-            }
-        }
-        return qr;
-    }
-   
 
 
 
@@ -219,10 +225,7 @@ public:
         return expand_uint(~UPPER, ~LOWER);
     }
     expand_uint& operator<<=(uint64_t shift) {
-        if (shift >= expand_bits())
-            *this = exint_0;
-
-        else if (shift == expand_bits_childs()) {
+        if (shift == expand_bits_childs()) {
             UPPER = LOWER;
             LOWER = 0;
         }
@@ -246,14 +249,7 @@ public:
         return expand_uint(*this) <<= shift;
     }
     expand_uint& operator>>=(uint64_t shift) {
-        if (shift >= expand_bits())
-            *this = exint_0;
-        else if (shift == expand_bits_childs()) {
-            LOWER = UPPER;
-            UPPER = 0;
-        }
-        else if (shift == 0);
-        else if (shift < expand_bits_childs()) {
+        if (shift < expand_bits_childs()) {
             uint64_t tmp = UPPER;
             LOWER = (UPPER <<= (expand_bits_childs() - shift)) + (LOWER >>= shift);
             UPPER = tmp;
@@ -312,7 +308,7 @@ public:
     }
     expand_uint operator++(int) {
         expand_uint temp(*this);
-        ++*this;
+        ++* this;
         return temp;
     }
     expand_uint operator+(const expand_uint& rhs) const {
@@ -334,49 +330,20 @@ public:
     }
 
     expand_uint operator*(const expand_uint& rhs) const {
-        // split values into 4 32-bit parts
-        uint64_t top[4] = { UPPER >> 32, UPPER & 0xffffffff, LOWER >> 32, LOWER & 0xffffffff };
-        uint64_t bottom[4] = { rhs.UPPER >> 32, rhs.UPPER & 0xffffffff, rhs.LOWER >> 32, rhs.LOWER & 0xffffffff };
-        uint64_t products[4][4];
-
-        // multiply each component of the values
-        for (int y = 3; y > -1; y--) {
-            for (int x = 3; x > -1; x--) {
-                products[3 - x][y] = top[x] * bottom[y];
-            }
+        expand_uint res(0);
+        expand_uint multer = rhs;
+        char* multer_proxy = (char*)&multer;
+        size_t bits = multer.bits();
+        for (size_t i = 0; i < bits; i++) {
+#ifdef IS_BIG_ENDIAN
+                if (multer_proxy[0] & 1)
+#else
+                if (multer_proxy[expand_bits()/64 - 1] & 0x8000000000000000)
+#endif
+                res += *this << i;
+            multer >>= 1;
         }
-
-        // first row
-        uint64_t fourth32 = (products[0][3] & 0xffffffff);
-        uint64_t third32 = (products[0][2] & 0xffffffff) + (products[0][3] >> 32);
-        uint64_t second32 = (products[0][1] & 0xffffffff) + (products[0][2] >> 32);
-        uint64_t first32 = (products[0][0] & 0xffffffff) + (products[0][1] >> 32);
-
-        // second row
-        third32 += (products[1][3] & 0xffffffff);
-        second32 += (products[1][2] & 0xffffffff) + (products[1][3] >> 32);
-        first32 += (products[1][1] & 0xffffffff) + (products[1][2] >> 32);
-
-        // third row
-        second32 += (products[2][3] & 0xffffffff);
-        first32 += (products[2][2] & 0xffffffff) + (products[2][3] >> 32);
-
-        // fourth row
-        first32 += (products[3][3] & 0xffffffff);
-
-        // move carry to next digit
-        third32 += fourth32 >> 32;
-        second32 += third32 >> 32;
-        first32 += second32 >> 32;
-
-        // remove carry from current digit
-        fourth32 &= 0xffffffff;
-        third32 &= 0xffffffff;
-        second32 &= 0xffffffff;
-        first32 &= 0xffffffff;
-
-        // combine components
-        return expand_uint((first32 << 32) | second32, (third32 << 32) | fourth32);
+        return res;
     }
     expand_uint& operator*=(const expand_uint& rhs) {
         *this = *this * rhs;
@@ -426,11 +393,11 @@ const expand_uint<0> expand_uint<0>::exint_1 = 1;
 template<uint64_t byte_expand>
 class expand_uint {
 #ifdef IS_BIG_ENDIAN
-    expand_uint<byte_expand - 1> UPPER;
     expand_uint<byte_expand - 1> LOWER;
+    expand_uint<byte_expand - 1> UPPER;
 #else
-    expand_uint<byte_expand - 1> LOWER;
     expand_uint<byte_expand - 1> UPPER;
+    expand_uint<byte_expand - 1> LOWER;
 #endif
     uint64_t bits() const {
         uint64_t out = 0;
@@ -467,12 +434,14 @@ class expand_uint {
         }
 
         std::pair <expand_uint, expand_uint> qr(exint_0, lhs);
+        std::pair <expand_uint, expand_uint> qrCheck(exint_0, lhs);
         expand_uint copyd = rhs << (lhs.bits() - rhs.bits());
         expand_uint adder = exint_1 << (lhs.bits() - rhs.bits());
         if (copyd > qr.second) {
             copyd >>= 1;
             adder >>= 1;
         }
+
         while (qr.second >= rhs) {
             if (qr.second >= copyd) {
                 qr.second -= copyd;
@@ -483,13 +452,16 @@ class expand_uint {
         }
         return qr;
     }
-    template <typename I> std::string n2hexstr(I w, size_t hex_len = sizeof(I) << 1) {
+    template <typename I> static std::string n2hexstr(const I w, size_t hex_len = sizeof(I) << 1) {
         static const char* digits = "0123456789ABCDEF";
         std::string rc(hex_len, '0');
         for (size_t i = 0, j = (hex_len - 1) * 4; i < hex_len; ++i, j -= 4)
             rc[i] = digits[(w >> j) & 0x0f];
         return rc;
     }
+
+
+
 public:
     expand_uint static get_min() {
         return exint_0;
@@ -523,7 +495,7 @@ public:
         size_t str_len = strlen(str);
         expand_uint anti_overflow;
         for (size_t i = 0; i < str_len; i++) {
-            anti_overflow = *this * mult  + str[i] - '0';
+            anti_overflow = *this * mult + str[i] - '0';
             if (anti_overflow < *this) break;
             *this = anti_overflow;
         }
@@ -561,12 +533,12 @@ public:
         std::reverse(res.begin(), res.end());
         return res;
     }
-    std::string to_ansi_string() const{
+    std::string to_ansi_string() const {
         return expand_uint(*this).to_ansi_string();
     }
 
-    std::string to_hex_str() {
-        uint64_t* proxy = ((uint64_t*)this);
+    std::string to_hex_str() const {
+        const uint64_t* proxy = (const uint64_t*)this;
         std::stringstream stream;
         for (int64_t i = expand_bits() / 64 - 1; i >= 0; --i)
             stream << n2hexstr(proxy[i]);
@@ -739,41 +711,22 @@ public:
         return *this;
     }
 
+
     expand_uint operator*(const expand_uint& rhs) const {
-        // split values into 4 64-bit parts
-        expand_uint<byte_expand - 1> products[4][4];
-        expand_uint<byte_expand - 1> top[4] = { UPPER.upper(), UPPER.lower(), LOWER.upper(), LOWER.lower() };
-        expand_uint<byte_expand - 1> bottom[4] = { rhs.upper().upper(), rhs.upper().lower(), rhs.lower().upper(), rhs.lower().lower() };
-
-
-        // multiply each component of the values
-        for (int y = 3; y > -1; y--) {
-            for (int x = 3; x > -1; x--) {
-                products[3 - y][x] = top[x] * bottom[y];
-            }
-        }    // first row
-        expand_uint<byte_expand - 1> fourth64 = expand_uint<byte_expand - 1>(products[0][3].lower());
-        expand_uint<byte_expand - 1> third64 = expand_uint<byte_expand - 1>(products[0][2].lower()) + expand_uint<byte_expand - 1>(products[0][3].upper());
-        expand_uint<byte_expand - 1> second64 = expand_uint<byte_expand - 1>(products[0][1].lower()) + expand_uint<byte_expand - 1>(products[0][2].upper());
-        expand_uint<byte_expand - 1> first64 = expand_uint<byte_expand - 1>(products[0][0].lower()) + expand_uint<byte_expand - 1>(products[0][1].upper());
-
-        // second row
-        third64 += expand_uint<byte_expand - 1>(products[1][3].lower());
-        second64 += expand_uint<byte_expand - 1>(products[1][2].lower()) + expand_uint<byte_expand - 1>(products[1][3].upper());
-        first64 += expand_uint<byte_expand - 1>(products[1][1].lower()) + expand_uint<byte_expand - 1>(products[1][2].upper());
-
-        // third row
-        second64 += expand_uint<byte_expand - 1>(products[2][3].lower());
-        first64 += expand_uint<byte_expand - 1>(products[2][2].lower()) + expand_uint<byte_expand - 1>(products[2][3].upper());
-
-        // fourth row
-        first64 += expand_uint<byte_expand - 1>(products[3][3].lower());
-
-        // combines the values, taking care of carry over
-        return expand_uint(first64 << expand_bits_sub_childs(), expand_uint<byte_expand - 1>::exint_0) +
-            expand_uint(third64.upper(), third64 << expand_bits_sub_childs()) +
-            expand_uint(second64, expand_uint<byte_expand - 1>::exint_0) +
-            expand_uint(expand_uint<byte_expand - 1>::exint_0,fourth64);
+        expand_uint res(0);
+        expand_uint multer = rhs;
+        char* multer_proxy = (char*)&multer;
+        size_t bits = multer.bits();
+        for (size_t i = 0; i < bits; i++) {
+#ifdef IS_BIG_ENDIAN
+            if (multer_proxy[0] & 1)
+#else
+            if (multer_proxy[expand_bits() / 64 - 1] & 0x8000000000000000)
+#endif
+                res += *this << i;
+            multer >>= 1;
+        }
+        return res;
     }
     expand_uint& operator*=(const expand_uint& rhs) {
         *this = *this * rhs;
@@ -857,7 +810,7 @@ class expand_int {
     }
 
     expand_int& switch_to_unsiqn() {
-        if (val.is_minus) 
+        if (val.is_minus)
             switch_my_siqn();
         return *this;
     }
@@ -878,9 +831,10 @@ class expand_int {
         else return *this;
     }
 
-    union for_constructor{
+    union for_constructor {
         struct s {
 #ifdef IS_BIG_ENDIAN
+            uint64_t unused_[(expand_uint<byte_expand>::expand_bits()) / 64 - 1];
             uint64_t unused : 63;
             uint64_t _is_minus : 1;
 #else
@@ -892,7 +846,7 @@ class expand_int {
             }
             s(bool val) {
                 _is_minus = val;
-            } 
+            }
             void operator = (bool val) {
                 _is_minus = val;
             }
@@ -920,10 +874,10 @@ public:
 
 
     expand_int() {
-        val.unsigned_int = 0; 
+        val.unsigned_int = 0;
     }
     expand_int(const expand_int& rhs) = default;
-    expand_int(expand_int && rhs) = default;
+    expand_int(expand_int&& rhs) = default;
     expand_int(const char* str) {
         bool set_minus = 0;
         if (*str++ == '-')
@@ -936,7 +890,7 @@ public:
         }
     }
     template <uint64_t byt_expand>
-    expand_int(const expand_int<byt_expand> rhs)  {
+    expand_int(const expand_int<byt_expand> rhs) {
         if constexpr (byt_expand < byte_expand) {
             bool is_minus = rhs.val.is_minus;
             rhs.val.is_minus = 0;
@@ -961,38 +915,38 @@ public:
 
     std::string to_ansi_string() {
         if (val.is_minus)
-            return 
-                '-' + expand_int(*this).switch_to_unsiqn().
-                                  val.unsigned_int.to_ansi_string();
-        else 
+            return
+            '-' + expand_int(*this).switch_to_unsiqn().
+            val.unsigned_int.to_ansi_string();
+        else
             return val.unsigned_int.to_ansi_string();
     }
     std::string to_hex_str() const {
         return val.unsigned_int.to_ansi_string();
     }
 
-    expand_int& operator=(const expand_int & rhs) = default;
-    expand_int& operator=(expand_int && rhs) = default;
+    expand_int& operator=(const expand_int& rhs) = default;
+    expand_int& operator=(expand_int&& rhs) = default;
 
 
-    expand_int operator&(const expand_int & rhs) const {
+    expand_int operator&(const expand_int& rhs) const {
         return expand_int(*this) &= rhs;
     }
-    expand_int& operator&=(const expand_int & rhs) {
+    expand_int& operator&=(const expand_int& rhs) {
         val.unsigned_int &= rhs.val.unsigned_int;
         return *this;
     }
-    expand_int operator|(const expand_int & rhs) const {
+    expand_int operator|(const expand_int& rhs) const {
         return expand_int(*this) |= rhs;
     }
-    expand_int& operator|=(const expand_int & rhs) {
+    expand_int& operator|=(const expand_int& rhs) {
         val.unsigned_int |= rhs.val.unsigned_int;
         return *this;
     }
-    expand_int operator^(const expand_int & rhs) const {
+    expand_int operator^(const expand_int& rhs) const {
         return expand_int(*this) ^= rhs;
     }
-    expand_int& operator^=(const expand_int & rhs) {
+    expand_int& operator^=(const expand_int& rhs) {
         val.unsigned_int ^= rhs.val.unsigned_int;
         return *this;
     }
@@ -1021,36 +975,36 @@ public:
     bool operator!() const {
         return !val.unsigned_int;
     }
-    bool operator&&(const expand_int & rhs) const {
+    bool operator&&(const expand_int& rhs) const {
         return ((bool)*this && rhs);
     }
-    bool operator||(const expand_int & rhs) const {
+    bool operator||(const expand_int& rhs) const {
         return ((bool)*this || rhs);
     }
-    bool operator==(const expand_int & rhs) const {
+    bool operator==(const expand_int& rhs) const {
         return val.unsigned_int == rhs.val.unsigned_int;
     }
-    bool operator!=(const expand_int & rhs) const {
+    bool operator!=(const expand_int& rhs) const {
         return val.unsigned_int != rhs.val.unsigned_int;
     }
-    bool operator>(const expand_int & rhs) const {
+    bool operator>(const expand_int& rhs) const {
         if (val.is_minus && !rhs.val.is_minus)
             return false;
         if (!val.is_minus && rhs.val.is_minus)
             return true;
         return expand_int(*this).switch_to_unsiqn().val.unsigned_int > rhs.switch_to_unsiqn().val.unsigned_int;
     }
-    bool operator<(const expand_int & rhs) const {
+    bool operator<(const expand_int& rhs) const {
         if (val.is_minus && !rhs.val.is_minus)
             return true;
         if (!val.is_minus && rhs.val.is_minus)
             return false;
         return expand_int(*this).switch_to_unsiqn().val.unsigned_int < rhs.switch_to_unsiqn().val.unsigned_int;
     }
-    bool operator>=(const expand_int & rhs) const {
+    bool operator>=(const expand_int& rhs) const {
         return ((*this > rhs) | (*this == rhs));
     }
-    bool operator<=(const expand_int & rhs) const {
+    bool operator<=(const expand_int& rhs) const {
         return ((*this < rhs) | (*this == rhs));
     }
 
@@ -1083,14 +1037,14 @@ public:
         return temp;
     }
 
-    expand_int operator+(const expand_int & rhs) const {
+    expand_int operator+(const expand_int& rhs) const {
         return expand_int(*this) += rhs;
     }
-    expand_int operator-(const expand_int & rhs) const {
+    expand_int operator-(const expand_int& rhs) const {
         return expand_int(*this) -= rhs;
     }
 
-    expand_int& operator+=(const expand_int & rhs) {
+    expand_int& operator+=(const expand_int& rhs) {
         if (val.is_minus && rhs.val.is_minus) {
             switch_my_siqn().val.unsigned_int += rhs.switch_my_siqn().val.unsigned_int;
             switch_to_siqn();
@@ -1108,18 +1062,18 @@ public:
         else if (rhs.val.is_minus) {
             val.unsigned_int -= rhs.switch_my_siqn().val.unsigned_int;
         }
-        else 
+        else
             val.unsigned_int += rhs.val.unsigned_int;
         return *this;
     }
-    expand_int& operator-=(const expand_int & rhs) {
+    expand_int& operator-=(const expand_int& rhs) {
         if (val.is_minus && rhs.val.is_minus) {
             switch_my_siqn().val.unsigned_int -= rhs.switch_my_siqn().val.unsigned_int;
             switch_my_siqn();
         }
         else if (val.is_minus) {
             switch_my_siqn().val.unsigned_int -= rhs.val.unsigned_int;
-            if(val.unsigned_int)
+            if (val.unsigned_int)
                 switch_to_unsiqn();
         }
         else if (rhs.val.is_minus) {
@@ -1131,7 +1085,7 @@ public:
                 val.unsigned_int -= rhs.val.unsigned_int;
         }
         else {
-            if(val.unsigned_int>= rhs.val.unsigned_int)
+            if (val.unsigned_int >= rhs.val.unsigned_int)
                 val.unsigned_int -= rhs.val.unsigned_int;
             else {
                 val.unsigned_int = rhs.val.unsigned_int - val.unsigned_int;
@@ -1141,10 +1095,10 @@ public:
         return *this;
     }
 
-    expand_int operator*(const expand_int & rhs) const {
+    expand_int operator*(const expand_int& rhs) const {
         return expand_int(*this) *= rhs;
     }
-    expand_int& operator*=(const expand_int & rhs) {
+    expand_int& operator*=(const expand_int& rhs) {
         if (val.is_minus && rhs.val.is_minus)
             switch_my_siqn().val.unsigned_int *= rhs.switch_my_siqn().val.unsigned_int;
         else if (val.is_minus || rhs.val.is_minus) {
@@ -1255,6 +1209,7 @@ class expand_real {
 
         struct s {
 #ifdef IS_BIG_ENDIAN
+            uint64_t unused_[(expand_uint<byte_expand>::expand_bits()) / 64 - 1];
             uint64_t unused : 63 - (byte_expand >= 57 ? 63 : (5 + byte_expand));
             uint64_t _dot_pos : (byte_expand >= 57 ? 63 : (5 + byte_expand));
             uint64_t _is_minus : 1;
@@ -1290,7 +1245,7 @@ class expand_real {
     static std::vector<std::string> split_dot(std::string value) {
         std::vector<std::string> strPairs;
         size_t pos = 0;
-        if((pos = value.find(".")) != std::string::npos) {
+        if ((pos = value.find(".")) != std::string::npos) {
             strPairs.push_back(value.substr(0, pos));
             value.erase(0, pos + 1);
         }
@@ -1308,7 +1263,7 @@ class expand_real {
         val.dot_pos = value;
     }
     void normalize_dot() {
-        if (val.dot_pos == 0) 
+        if (val.dot_pos == 0)
             return;
         std::string tmp_this_value = to_ansi_string();
         expand_real remove_nuls_mult(10);
@@ -1325,7 +1280,7 @@ class expand_real {
         }
         uint64_t modify_dot = temp_denormalize_struct() - nul_count;
         if (nul_count)
-            div(remove_nuls,false);
+            div(remove_nuls, false);
         normalize_struct(modify_dot);
     }
 
@@ -1343,7 +1298,7 @@ class expand_real {
         while (true) {
             if (val.signed_int % tmp.val.signed_int) {
                 this_dot_pos++;
-                if (this_dot_pos!=shift_tmp.val.dot_pos) {
+                if (this_dot_pos != shift_tmp.val.dot_pos) {
                     val.signed_int = val.signed_int * move_tmp;
                     continue;
                 }
@@ -1458,7 +1413,7 @@ public:
             }
             str.insert(str.end() - tmp, '.');
         }
-        return (has_minus?"-":"")+str;
+        return (has_minus ? "-" : "") + str;
     }
     std::string to_ansi_string() const {
         return expand_real(*this).to_ansi_string();
@@ -1728,6 +1683,7 @@ class expand_unreal {
 
         struct s {
 #ifdef IS_BIG_ENDIAN
+            uint64_t unused_[(expand_uint<byte_expand>::expand_bits()) / 64 - 1];
             uint64_t unused : 64 - (byte_expand >= 58 ? 64 : (5 + byte_expand));
             uint64_t _dot_pos : (byte_expand >= 58 ? 64 : (5 + byte_expand));
 #else
@@ -1890,7 +1846,7 @@ public:
         normalize_struct(temp_denormalize_struct());
     }
     template <uint64_t byt_expand>
-    expand_unreal(const expand_unreal<byt_expand> rhs)  {
+    expand_unreal(const expand_unreal<byt_expand> rhs) {
         *this = rhs.to_ansi_string().c_str();
     }
 
@@ -2157,7 +2113,7 @@ public:
     template <uint64_t byt_expand>
     explicit operator expand_real<byt_expand>() const {
         return to_ansi_string().c_str();
-    }   
+    }
     template <uint64_t byt_expand>
     explicit operator expand_unreal<byt_expand>() {
         return to_ansi_string().c_str();
