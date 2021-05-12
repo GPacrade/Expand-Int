@@ -495,7 +495,7 @@ public:
         return exint_0;
     }
     expand_uint static get_max() {
-        return expand_uint(expand_uint<byte_expand - 1>::max, expand_uint<byte_expand - 1>::max);
+        return expand_uint(expand_uint<byte_expand - 1>::get_max(), expand_uint<byte_expand - 1>::get_max());
     }
 
     static const expand_uint<byte_expand> exint_0;
@@ -913,7 +913,7 @@ public:
     }
     static expand_int get_max() {
         expand_int tmp;
-        tmp.val.unsigned_int = expand_uint<byte_expand>::max;
+        tmp.val.unsigned_int = expand_uint<byte_expand>::get_max();
         tmp.val.is_minus = 0;
         return tmp;
     }
