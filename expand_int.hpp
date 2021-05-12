@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <malloc.h>
 #include <utility>
-#include <regex>
 #include <stdexcept>
 
 #define IS_BIG_ENDIAN (!(union { uint16_t u16; unsigned char c; }){ .u16 = 1 }.c)
@@ -38,13 +37,14 @@ class expand_uint<0> {
     uint64_t LOWER;
     uint64_t UPPER;
 #endif
+
+public:
+    expand_uint static get_min() {
+        return 0;
+    }
     expand_uint static get_max() {
         return expand_uint(-1, -1);
     }
-
-public:
-    static const expand_uint min;
-    static const expand_uint max;
 
 
     const uint64_t& upper() const {
@@ -66,6 +66,17 @@ public:
     expand_uint() : UPPER(0), LOWER(0) {};
     expand_uint(const expand_uint& rhs) = default;
     expand_uint(expand_uint&& rhs) = default;
+    template <uint64_t byt_expand>
+    expand_uint(const expand_uint<byt_expand>& rhs) {
+        uint64_t* rhs_proxy = ((uint64_t*)&rhs);
+        uint64_t* proxy = ((uint64_t*)this);
+        if constexpr (expand_bits() <= expand_uint<byt_expand>::expand_bits())
+            for (int64_t i = expand_bits() / 64 - 1; i >= 0; --i)
+                proxy[i] = rhs_proxy[i];
+        else
+            for (int64_t i = expand_uint<byt_expand>::expand_bits() / 64 - 1; i >= 0; --i)
+                proxy[i] = rhs_proxy[i];
+    }
 
     expand_uint(const long long rhs) : UPPER(0), LOWER(rhs){}
     expand_uint(const unsigned long long rhs) : UPPER(0), LOWER(rhs) {}
@@ -405,20 +416,12 @@ public:
     }
 
     template <uint64_t byt_expand>
-    operator expand_uint<byt_expand>() const {
-        std::string this_as_string = to_ansi_string();
-        expand_uint<byt_expand> test(this_as_string.c_str());
-
-        if (test.to_ansi_string() != this_as_string)
-            throw std::overflow_error("Fail convert from expand_uint<0> to expand_uint<" + std::to_string(byt_expand) + ">");
-
-        return test;
+    explicit operator expand_uint<byt_expand>() {
+        return to_ansi_string().c_str();
     }
 };
 const expand_uint<0> expand_uint<0>::exint_0 = 0;
 const expand_uint<0> expand_uint<0>::exint_1 = 1;
-expand_uint<0> const expand_uint<0>::min = 0;
-expand_uint<0> const expand_uint<0>::max = expand_uint<0>::get_max();
 
 template<uint64_t byte_expand>
 class expand_uint {
@@ -487,15 +490,13 @@ class expand_uint {
             rc[i] = digits[(w >> j) & 0x0f];
         return rc;
     }
-
+public:
+    expand_uint static get_min() {
+        return exint_0;
+    }
     expand_uint static get_max() {
         return expand_uint(expand_uint<byte_expand - 1>::max, expand_uint<byte_expand - 1>::max);
     }
-
-
-public:
-    static const expand_uint min;
-    static const expand_uint max;
 
     static const expand_uint<byte_expand> exint_0;
     static const expand_uint<byte_expand> exint_1;
@@ -526,6 +527,13 @@ public:
             if (anti_overflow < *this) break;
             *this = anti_overflow;
         }
+    }
+    template <uint64_t byt_expand>
+    expand_uint(const expand_uint<byt_expand>& rhs) {
+        if constexpr (byt_expand < byte_expand)
+            LOWER = rhs;
+        else
+            *this = rhs.to_ansi_string().c_str();
     }
 
     expand_uint(const long long rhs) : UPPER(0), LOWER(rhs) {}
@@ -712,16 +720,12 @@ public:
         *this += exint_1;
         return temp;
     }
-    expand_uint operator+(const expand_uint&& rhs) const { return *this + rhs; }
-    expand_uint operator-(const expand_uint&& rhs) const { return *this - rhs; }
     expand_uint operator+(const expand_uint& rhs) const {
         return expand_uint(*this) += rhs;
     }
     expand_uint operator-(const expand_uint& rhs) const {
         return expand_uint(*this) -= rhs;
     }
-    expand_uint& operator+=(const expand_uint&& rhs) const { return *this += rhs; }
-    expand_uint& operator-=(const expand_uint&& rhs) const { return *this -= rhs; }
     expand_uint& operator+=(const expand_uint& rhs) {
         UPPER += rhs.UPPER;
         UPPER += ((LOWER + rhs.LOWER) < LOWER) ? expand_uint<byte_expand - 1>::exint_1 : expand_uint<byte_expand - 1>::exint_0;
@@ -735,8 +739,6 @@ public:
         return *this;
     }
 
-    expand_uint operator*(const expand_uint&& rhs) const { return *this * rhs; }
-    expand_uint& operator*=(const expand_uint&& rhs) const { return *this *= rhs; }
     expand_uint operator*(const expand_uint& rhs) const {
         // split values into 4 64-bit parts
         expand_uint<byte_expand - 1> products[4][4];
@@ -768,18 +770,16 @@ public:
         first64 += expand_uint<byte_expand - 1>(products[3][3].lower());
 
         // combines the values, taking care of carry over
-        return expand_uint(first64 << expand_bits_sub_childs(), exint_0) +
+        return expand_uint(first64 << expand_bits_sub_childs(), expand_uint<byte_expand - 1>::exint_0) +
             expand_uint(third64.upper(), third64 << expand_bits_sub_childs()) +
-            expand_uint(second64, exint_0) +
-            expand_uint(fourth64);
+            expand_uint(second64, expand_uint<byte_expand - 1>::exint_0) +
+            expand_uint(expand_uint<byte_expand - 1>::exint_0,fourth64);
     }
     expand_uint& operator*=(const expand_uint& rhs) {
         *this = *this * rhs;
         return *this;
     }
 
-    expand_uint operator/(const expand_uint&& rhs) const { return *this / rhs; }
-    expand_uint& operator/=(const expand_uint&& rhs) const { return *this /= rhs; }
     expand_uint operator/(const expand_uint& rhs) const {
         return divmod(*this, rhs).first;
     }
@@ -788,8 +788,6 @@ public:
         return *this;
     }
 
-    expand_uint operator%(const expand_uint&& rhs) const { return *this % rhs; }
-    expand_uint& operator%=(const expand_uint&& rhs) const { return *this %= rhs; }
     expand_uint operator%(const expand_uint& rhs) const {
         return divmod(*this, rhs).second;
     }
@@ -813,16 +811,9 @@ public:
     explicit operator uint64_t() const {
         return (uint64_t)LOWER;
     }
-
     template <uint64_t byt_expand>
-    operator expand_uint<byt_expand>() const {
-        std::string this_as_string = to_ansi_string();
-        expand_uint<byt_expand> test(this_as_string.c_str());
-
-        if (test.to_ansi_string() != this_as_string)
-            throw std::overflow_error("Fail convert from expand_uint<" + std::to_string(byte_expand) + "> to expand_uint<" + std::to_string(byt_expand) + ">");
-
-        return test;
+    explicit operator expand_uint<byt_expand>() {
+        return to_ansi_string().c_str();
     }
 };
 template<uint64_t byte_expand>
@@ -831,11 +822,6 @@ template<uint64_t byte_expand>
 const expand_uint<byte_expand> expand_uint<byte_expand>::exint_1 = 1;
 
 
-template<uint64_t byte_expand>
-expand_uint<byte_expand> const expand_uint<byte_expand>::min = 0;
-
-template<uint64_t byte_expand>
-expand_uint<byte_expand> const expand_uint<byte_expand>::max = expand_uint<byte_expand>::get_max();
 typedef expand_uint<0> uint128_ext;
 typedef expand_uint<1> uint256_ext;
 typedef expand_uint<2> uint512_ext;
@@ -919,6 +905,7 @@ class expand_int {
         for_constructor() {
         }
     } val;
+public:
     static expand_int get_min() {
         expand_int tmp = 0;
         tmp.val.is_minus = 1;
@@ -930,9 +917,6 @@ class expand_int {
         tmp.val.is_minus = 0;
         return tmp;
     }
-public:
-    static expand_int min;
-    static expand_int max;
 
 
     expand_int() {
@@ -951,6 +935,30 @@ public:
             val.is_minus = 1;
         }
     }
+    template <uint64_t byt_expand>
+    expand_int(const expand_int<byt_expand> rhs)  {
+        if constexpr (byt_expand < byte_expand) {
+            bool is_minus = rhs.val.is_minus;
+            rhs.val.is_minus = 0;
+            val.unsigned_int = rhs.val.unsigned_int;
+            val.is_minus = is_minus;
+        }
+        else
+            *this = rhs.to_ansi_string().c_str();
+    }
+    template <typename T>
+    expand_int(const T& rhs)
+    {
+        val.unsigned_int = (expand_uint<byte_expand>)rhs;
+    }
+    template <typename T>
+    expand_int(const T&& rhs)
+    {
+        val.unsigned_int = (expand_uint<byte_expand>)rhs;
+    }
+    expand_int(const long long rhs) { *this = std::to_string(rhs).c_str(); }
+    expand_int(const int rhs) { *this = std::to_string(rhs).c_str(); }
+
     std::string to_ansi_string() {
         if (val.is_minus)
             return 
@@ -1207,24 +1215,11 @@ public:
     explicit operator expand_uint<byt_expand>() const {
         return expand_uint<byt_expand>(val.unsigned_int);
     }
-
     template <uint64_t byt_expand>
-    operator expand_int<byt_expand>() const {
-        std::string this_as_string = to_ansi_string();
-        expand_int<byt_expand> test(this_as_string);
-
-        if (test.to_ansi_string() != this_as_string)
-            throw std::overflow_error("Fail convert from expand_int<" + std::to_string(byte_expand) + "> to expand_int<" + std::to_string(byt_expand) + ">");
-
-        return test;
+    explicit operator expand_int<byt_expand>() {
+        return to_ansi_string().c_str();
     }
 };
-
-template<uint64_t byte_expand>
-expand_int<byte_expand> expand_int<byte_expand>::min = expand_int<byte_expand>::get_min();
-
-template<uint64_t byte_expand>
-expand_int<byte_expand> expand_int<byte_expand>::max = expand_int<byte_expand>::get_max();
 
 
 typedef expand_int<0> int128_ext;
@@ -1260,8 +1255,8 @@ class expand_real {
 
         struct s {
 #ifdef IS_BIG_ENDIAN
-            uint64_t unused : 63 - (byte_expand >= 63 ? 64 : (5 + byte_expand));
-            uint64_t _dot_pos : (byte_expand >= 63 ? 64 : (5 + byte_expand));
+            uint64_t unused : 63 - (byte_expand >= 57 ? 63 : (5 + byte_expand));
+            uint64_t _dot_pos : (byte_expand >= 57 ? 63 : (5 + byte_expand));
             uint64_t _is_minus : 1;
 #else
             uint64_t _is_minus : 1;
@@ -1282,6 +1277,9 @@ class expand_real {
             }
             bool is_minus() const {
                 return _is_minus;
+            }
+            bool modify_minus(bool bol) {
+                _is_minus = bol;
             }
         } dot_pos;
         expand_int<byte_expand> signed_int;
@@ -1339,7 +1337,7 @@ class expand_real {
         this_dot_pos -= rhs_dot_pos;
 
 
-        expand_int<byte_expand> move_tmp = 10;
+        expand_int<byte_expand> move_tmp = expand_int < byte_expand>(10);
         expand_real shift_tmp;
         shift_tmp.val.dot_pos = -1;
         while (true) {
@@ -1385,21 +1383,19 @@ class expand_real {
         if (do_normalize_dot)
             normalize_dot();
     }
+public:
     static expand_real get_min() {
         expand_real tmp = 0;
-        tmp.val.signed_int = expand_int<byte_expand>::min;
+        tmp.val.signed_int = expand_int<byte_expand>::get_min();
         tmp.val.dot_pos = 0;
         return tmp;
     }
     static expand_real get_max() {
         expand_real tmp = 0;
-        tmp.val.signed_int = expand_int<byte_expand>::max;
+        tmp.val.signed_int = expand_int<byte_expand>::get_max();
         tmp.val.dot_pos = 0;
         return tmp;
     }
-public:
-    static expand_real min;
-    static expand_real max;
 
     expand_real() {
         val.signed_int = 0;
@@ -1428,8 +1424,17 @@ public:
         }
         normalize_struct(temp_denormalize_struct());
     }
+    template <uint64_t byt_expand>
+    expand_real(const expand_int<byt_expand>& rhs) {
+        *this = rhs.to_ansi_string().c_str();
+    }
     template <typename T>
     expand_real(const T& rhs)
+    {
+        val.signed_int = (expand_int<byte_expand>)rhs;
+    }
+    template <typename T>
+    expand_real(const T&& rhs)
     {
         val.signed_int = (expand_int<byte_expand>)rhs;
     }
@@ -1689,22 +1694,10 @@ public:
         return expand_uint<byt_expand>(val.signed_int);
     }
     template <uint64_t byt_expand>
-    operator expand_real<byt_expand>() const {
-        std::string this_as_string = to_ansi_string();
-        expand_real<byt_expand> test(this_as_string);
-
-        if (test.to_ansi_string() != this_as_string)
-            throw std::overflow_error("Fail convert from expand_int<" + std::to_string(byte_expand) + "> to expand_int<" + std::to_string(byt_expand) + ">");
-
-        return test;
+    explicit operator expand_real<byt_expand>() {
+        return to_ansi_string().c_str();
     }
 };
-
-template<uint64_t byte_expand>
-expand_real<byte_expand> expand_real<byte_expand>::min = expand_real<byte_expand>::get_min();
-
-template<uint64_t byte_expand>
-expand_real<byte_expand> expand_real<byte_expand>::max = expand_real<byte_expand>::get_max();
 
 
 
@@ -1727,3 +1720,468 @@ typedef expand_real<5> real512_exb;
 typedef expand_real<6> real1024_exb;
 typedef expand_real<7> real2048_exb;
 typedef expand_real<8> real4096_exb;
+
+
+template<uint64_t byte_expand>
+class expand_unreal {
+    union for_constructor {
+
+        struct s {
+#ifdef IS_BIG_ENDIAN
+            uint64_t unused : 64 - (byte_expand >= 58 ? 64 : (5 + byte_expand));
+            uint64_t _dot_pos : (byte_expand >= 58 ? 64 : (5 + byte_expand));
+#else
+            uint64_t _dot_pos : (byte_expand >= 58 ? 64 : (5 + byte_expand));
+#endif
+        public:
+            s() {
+
+            }
+            s(uint64_t val) {
+                _dot_pos = val;
+            }
+            void operator = (uint64_t val) {
+                _dot_pos = val;
+            }
+            operator uint64_t() const {
+                return _dot_pos;
+            }
+        } dot_pos;
+        expand_uint<byte_expand> unsigned_int;
+        for_constructor() {}
+    } val;
+
+
+    static std::vector<std::string> split_dot(std::string value) {
+        std::vector<std::string> strPairs;
+        size_t pos = 0;
+        if ((pos = value.find(".")) != std::string::npos) {
+            strPairs.push_back(value.substr(0, pos));
+            value.erase(0, pos + 1);
+        }
+        if (!value.empty())
+            strPairs.push_back(value);
+        return strPairs;
+    }
+
+    uint64_t temp_denormalize_struct() {
+        uint64_t tmp = val.dot_pos;
+        val.dot_pos = 0;
+        return tmp;
+    }
+    void normalize_struct(uint64_t value) {
+        val.dot_pos = value;
+    }
+    void normalize_dot() {
+        if (val.dot_pos == 0)
+            return;
+        std::string tmp_this_value = to_ansi_string();
+        expand_unreal remove_nuls_mult(10);
+        expand_unreal remove_nuls(1);
+        size_t nul_count = 0;
+        for (int64_t i = tmp_this_value.length() - 1; i >= 0; i--)
+        {
+            if (tmp_this_value[i] != '0')
+                break;
+            else {
+                remove_nuls *= remove_nuls_mult;
+                nul_count++;
+            }
+        }
+        uint64_t modify_dot = temp_denormalize_struct() - nul_count;
+        if (nul_count)
+            div(remove_nuls, false);
+        normalize_struct(modify_dot);
+    }
+
+    void div(const expand_unreal& rhs, bool do_normalize_dot = true) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_unreal tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+
+        this_dot_pos -= rhs_dot_pos;
+
+
+        expand_uint<byte_expand> move_tmp = 10;
+        expand_unreal shift_tmp;
+        shift_tmp.val.dot_pos = -1;
+        while (true) {
+            if (val.unsigned_int % tmp.val.unsigned_int) {
+                this_dot_pos++;
+                if (this_dot_pos != shift_tmp.val.dot_pos) {
+                    val.unsigned_int = val.unsigned_int * move_tmp;
+                    continue;
+                }
+                this_dot_pos--;
+            }
+            val.unsigned_int /= tmp.val.unsigned_int;
+            break;
+        }
+        normalize_struct(this_dot_pos);
+        if (do_normalize_dot)
+            normalize_dot();
+    }
+    void mod(const expand_unreal& rhs, bool do_normalize_dot = true) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_unreal tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+
+        this_dot_pos -= rhs_dot_pos;
+
+
+        expand_uint<byte_expand> move_tmp = 10;
+        expand_unreal shift_tmp;
+        shift_tmp.val.dot_pos = -1;
+        while (true) {
+            if (val.unsigned_int % tmp.val.unsigned_int) {
+                this_dot_pos++;
+                if (this_dot_pos != shift_tmp.val.dot_pos) {
+                    val.unsigned_int = val.unsigned_int * move_tmp;
+                    continue;
+                }
+                this_dot_pos--;
+            }
+            val.unsigned_int %= tmp.val.unsigned_int;
+            break;
+        }
+        normalize_struct(this_dot_pos);
+        if (do_normalize_dot)
+            normalize_dot();
+    }
+public:
+    static expand_unreal get_min() {
+        expand_unreal tmp = 0;
+        tmp.val.unsigned_int = expand_uint<byte_expand>::get_min();
+        tmp.val.dot_pos = 0;
+        return tmp;
+    }
+    static expand_unreal get_max() {
+        expand_unreal tmp = 0;
+        tmp.val.unsigned_int = expand_uint<byte_expand>::get_max();
+        tmp.val.dot_pos = 0;
+        return tmp;
+    }
+
+    expand_unreal() {
+        val.unsigned_int = 0;
+    }
+    expand_unreal(const expand_unreal& rhs) = default;
+    expand_unreal(expand_unreal&& rhs) = default;
+    expand_unreal(const char* str) {
+        *this = std::string(str);
+    }
+    expand_unreal(const std::string str) {
+        size_t found_pos = str.find('.');
+        if (found_pos == std::string::npos)
+        {
+            val.unsigned_int = expand_uint<byte_expand>(str.c_str());
+            val.dot_pos = 0;
+        }
+        else {
+            //check str for second dot
+            if (str.find('.', found_pos) == std::string::npos)
+                throw std::invalid_argument("Real value can contain only one dot");
+
+            std::string tmp = str;
+            tmp.erase(tmp.begin() + found_pos);
+            val.unsigned_int = expand_uint<byte_expand>(tmp.c_str());
+            val.dot_pos = (str.length() - found_pos - 1);
+        }
+        normalize_struct(temp_denormalize_struct());
+    }
+    template <uint64_t byt_expand>
+    expand_unreal(const expand_unreal<byt_expand> rhs)  {
+        *this = rhs.to_ansi_string().c_str();
+    }
+
+
+    template <typename T>
+    expand_unreal(const T& rhs)
+    {
+        val.unsigned_int = (expand_uint<byte_expand>)rhs;
+    }
+    template <typename T>
+    expand_unreal(const T&& rhs)
+    {
+        val.unsigned_int = (expand_uint<byte_expand>)rhs;
+    }
+    std::string to_ansi_string() {
+        uint64_t tmp = temp_denormalize_struct();
+        std::string str = val.unsigned_int.to_ansi_string();
+        normalize_struct(tmp);
+        if (val.dot_pos) {
+            if (str.length() <= val.dot_pos) {
+                uint64_t resize_result_len = val.dot_pos - str.length() + 1;
+                std::string to_add_zeros;
+                while (resize_result_len--)
+                    to_add_zeros += '0';
+                str = to_add_zeros + str;
+            }
+            str.insert(str.end() - tmp, '.');
+        }
+        return str;
+    }
+    std::string to_ansi_string() const {
+        return expand_unreal(*this).to_ansi_string();
+    }
+    std::string to_hex_str() const {
+        return val.unsigned_int.to_hex_str();
+    }
+
+    expand_unreal& operator=(const expand_unreal& rhs) = default;
+    expand_unreal& operator=(expand_unreal&& rhs) = default;
+
+    expand_unreal operator&(const expand_unreal& rhs) const {
+        return expand_unreal(*this) &= rhs;
+    }
+
+    expand_unreal& operator&=(const expand_unreal& rhs) {
+        val.unsigned_int &= rhs.val.unsigned_int;
+        return *this;
+    }
+
+    expand_unreal operator|(const expand_unreal& rhs) const {
+        return expand_unreal(*this) |= rhs;
+    }
+
+    expand_unreal& operator|=(const expand_unreal& rhs) {
+        val.signed_int |= rhs.val.signed_int;
+        return *this;
+    }
+
+    expand_unreal operator^(const expand_unreal& rhs) const {
+        return expand_real(*this) ^= rhs;
+    }
+
+    expand_unreal& operator^=(const expand_unreal& rhs) {
+        val.unsigned_int ^= rhs.val.unsigned_int;
+        return *this;
+    }
+
+    expand_unreal operator~() const {
+        expand_unreal tmp(*this);
+        ~tmp.val.signed_int;
+        return tmp;
+    }
+
+
+
+    expand_unreal& operator<<=(uint64_t shift) {
+        val.unsigned_int <<= shift;
+        return *this;
+    }
+    expand_unreal operator<<(uint64_t shift) const {
+        return expand_unreal(*this) <<= shift;
+    }
+
+
+    expand_unreal& operator>>=(uint64_t shift) {
+        val.unsigned_int >>= shift;
+        return *this;
+    }
+    expand_unreal operator>>(uint64_t shift) const {
+        return expand_unreal(*this) >>= shift;
+    }
+    bool operator!() const {
+        return !val.unsigned_int;
+    }
+
+    bool operator&&(const expand_unreal& rhs) const {
+        return ((bool)*this && rhs);
+    }
+
+    bool operator||(const expand_unreal& rhs) const {
+        return ((bool)*this || rhs);
+    }
+
+    bool operator==(const expand_unreal& rhs) const {
+        return val.unsigned_int == rhs.val.unsigned_int;
+    }
+
+    bool operator!=(const expand_unreal& rhs) const {
+        return val.unsigned_int != rhs.val.unsigned_int;
+    }
+
+    bool operator>(const expand_unreal& rhs) const {
+        std::vector<std::string> this_parts = split_dot(to_ansi_string());
+        std::vector<std::string> rhs_parts = split_dot(rhs.to_ansi_string());
+        {
+            expand_uint<byte_expand> temp1(this_parts[0].c_str());
+            expand_uint<byte_expand> temp2(rhs_parts[0].c_str());
+            if (temp1 == temp2);
+            else return temp1 > temp2;
+        }
+        if (this_parts.size() == 2 && rhs_parts.size() == 2) {
+            expand_uint<byte_expand> temp1(this_parts[1].c_str());
+            expand_uint<byte_expand> temp2(rhs_parts[1].c_str());
+            return temp1 > temp2;
+        }
+        else
+            return this_parts.size() > rhs_parts.size();
+    }
+
+    bool operator<(const expand_unreal& rhs) const {
+        return !(*this > rhs) && *this != rhs;
+    }
+
+    bool operator>=(const expand_unreal& rhs) const {
+        return ((*this > rhs) | (*this == rhs));
+    }
+
+    bool operator<=(const expand_unreal& rhs) const {
+        return !(*this > rhs);
+    }
+
+
+    expand_unreal& operator++() {
+        return *this += 1;
+    }
+    expand_unreal operator++(int) {
+        expand_unreal temp(*this);
+        *this += 1;
+        return temp;
+    }
+    expand_unreal operator+(const expand_unreal& rhs) const {
+        return expand_real(*this) += rhs;
+    }
+    expand_unreal operator-(const expand_unreal& rhs) const {
+        return expand_real(*this) -= rhs;
+    }
+
+    expand_unreal& operator+=(const expand_unreal& rhs) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_unreal tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+        if (this_dot_pos == rhs_dot_pos);
+        else if (this_dot_pos > rhs_dot_pos) {
+            expand_uint<byte_expand> move_tmp = 1;
+            while (this_dot_pos != rhs_dot_pos++)
+                move_tmp *= 10;
+            tmp.val.unsigned_int *= move_tmp;
+        }
+        else {
+            expand_uint<byte_expand> move_tmp = 1;
+            while (rhs_dot_pos != this_dot_pos++)
+                move_tmp *= 10;
+            val.unsigned_int *= move_tmp;
+        }
+        val.unsigned_int += tmp.val.unsigned_int;
+        normalize_struct(this_dot_pos);
+        normalize_dot();
+        return *this;
+    }
+    expand_unreal& operator-=(const expand_unreal& rhs) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_unreal tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+        if (this_dot_pos == rhs_dot_pos);
+        else if (this_dot_pos > rhs_dot_pos) {
+            expand_uint<byte_expand> move_tmp = 1;
+            while (this_dot_pos != rhs_dot_pos++)
+                move_tmp *= 10;
+            tmp.val.unsigned_int *= move_tmp;
+        }
+        else {
+            expand_uint<byte_expand> move_tmp = 1;
+            while (rhs_dot_pos != this_dot_pos++)
+                move_tmp *= 10;
+            val.unsigned_int *= move_tmp;
+        }
+        val.unsigned_int -= tmp.val.unsigned_int;
+        normalize_struct(this_dot_pos);
+        normalize_dot();
+        return *this;
+    }
+
+    expand_unreal operator*(const expand_unreal& rhs) const {
+        return expand_unreal(*this) *= rhs;
+    }
+
+
+    expand_unreal& operator*=(const expand_unreal& rhs) {
+        uint64_t this_dot_pos = temp_denormalize_struct();
+        expand_unreal tmp = rhs;
+        uint64_t rhs_dot_pos = tmp.temp_denormalize_struct();
+        this_dot_pos += rhs_dot_pos;
+
+        val.unsigned_int *= tmp.val.unsigned_int;
+
+        normalize_struct(this_dot_pos);
+        normalize_dot();
+        return *this;
+    }
+
+    expand_unreal operator/(const expand_unreal& rhs) const {
+        return expand_unreal(*this) /= rhs;
+    }
+
+    expand_unreal& operator/=(const expand_unreal& rhs) {
+        div(rhs);
+        return *this;
+    }
+
+    expand_unreal operator%(const expand_unreal& rhs) const {
+        return expand_unreal(*this) %= rhs;
+    }
+
+    expand_unreal& operator%=(const expand_unreal& rhs) {
+        mod(rhs);
+        return *this;
+    }
+
+    explicit operator bool() const {
+        return (bool)val.signed_int;
+    }
+    explicit operator uint8_t() const {
+        return (uint8_t)val.signed_int;
+    }
+    explicit operator uint16_t() const {
+        return (uint16_t)val.signed_int;
+    }
+    explicit operator uint32_t() const {
+        return (uint32_t)val.signed_int;
+    }
+    explicit operator uint64_t() const {
+        return (uint64_t)val.signed_int;
+    }
+
+
+    template <uint64_t byt_expand>
+    explicit operator expand_int<byt_expand>() const {
+        return (expand_int<byt_expand>)expand_uint<byt_expand>(val.unsigned_int);
+    }
+    template <uint64_t byt_expand>
+    explicit operator expand_uint<byt_expand>() const {
+        return val.unsigned_int;
+    }
+    template <uint64_t byt_expand>
+    explicit operator expand_real<byt_expand>() const {
+        return to_ansi_string().c_str();
+    }   
+    template <uint64_t byt_expand>
+    explicit operator expand_unreal<byt_expand>() {
+        return to_ansi_string().c_str();
+    }
+};
+
+
+
+typedef expand_unreal<0> unreal128_ext;
+typedef expand_unreal<1> unreal256_ext;
+typedef expand_unreal<2> unreal512_ext;
+typedef expand_unreal<3> unreal1024_ext;
+typedef expand_unreal<4> unreal2048_ext;
+typedef expand_unreal<5> unreal4096_ext;
+typedef expand_unreal<6> unreal8192_ext;
+typedef expand_unreal<7> unreal16384_ext;
+typedef expand_unreal<8> unreal32768_ext;
+
+typedef expand_unreal<0> unreal16_exb;
+typedef expand_unreal<1> unreal32_exb;
+typedef expand_unreal<2> unreal64_exb;
+typedef expand_unreal<3> unreal128_exb;
+typedef expand_unreal<4> unreal256_exb;
+typedef expand_unreal<5> unreal512_exb;
+typedef expand_unreal<6> unreal1024_exb;
+typedef expand_unreal<7> unreal2048_exb;
+typedef expand_unreal<8> unreal4096_exb;
