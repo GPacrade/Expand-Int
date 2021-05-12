@@ -38,11 +38,18 @@ class expand_uint<0> {
     uint64_t LOWER;
     uint64_t UPPER;
 #endif
+    expand_uint static get_max() {
+        return expand_uint(-1, -1);
+    }
+
 public:
+    static const expand_uint min;
+    static const expand_uint max;
+
+
     const uint64_t& upper() const {
         return UPPER;
     }
-
     const uint64_t& lower() const {
         return LOWER;
     }
@@ -60,15 +67,11 @@ public:
     expand_uint(const expand_uint& rhs) = default;
     expand_uint(expand_uint&& rhs) = default;
 
-    template <typename T>
-    expand_uint(const T& rhs) : UPPER(0), LOWER(rhs)
-    {
-        if (std::is_signed<T>::value) {
-            if (rhs < 0) {
-                UPPER = -1;
-            }
-        }
-    }
+    expand_uint(const long long rhs) : UPPER(0), LOWER(rhs){}
+    expand_uint(const unsigned long long rhs) : UPPER(0), LOWER(rhs) {}
+    expand_uint(const unsigned int rhs) : UPPER(0), LOWER(rhs) {}
+    expand_uint(const double rhs) : UPPER(0), LOWER(rhs) {}
+    expand_uint(const int rhs) : UPPER(0), LOWER(rhs) {}
 
     template <typename S, typename T>
     expand_uint(const S& upper_rhs, const T& lower_rhs) : UPPER(upper_rhs), LOWER(lower_rhs)
@@ -119,6 +122,25 @@ public:
     expand_uint& operator=(const expand_uint& rhs) = default;
     expand_uint& operator=(expand_uint&& rhs) = default;
 
+    uint64_t bits() const {
+        uint64_t out = 0;
+        if (UPPER) {
+            out = 64;
+            uint64_t up = UPPER;
+            while (up) {
+                up >>= 1;
+                out++;
+            }
+        }
+        else {
+            uint64_t low = LOWER;
+            while (low) {
+                low >>= 1;
+                out++;
+            }
+        }
+        return out;
+    }
     std::pair <expand_uint, expand_uint> divmod(const expand_uint& lhs, const expand_uint& rhs) const {
         // Save some calculations /////////////////////
         if (rhs == exint_0) {
@@ -151,38 +173,6 @@ public:
         return qr;
     }
    
-    expand_uint& operator++() {
-        return *this += exint_1;
-    }
-    expand_uint operator++(int) {
-        expand_uint temp(*this);
-        ++* this;
-        return temp;
-    }
-    expand_uint operator/(const expand_uint& rhs) const {
-        return divmod(*this, rhs).first;
-    }
-
-    expand_uint& operator/=(const expand_uint& rhs) {
-        *this = *this / rhs;
-        return *this;
-    }
-
-    expand_uint operator%(const expand_uint& rhs) const {
-        return divmod(*this, rhs).second;
-    }
-
-    expand_uint& operator%=(const expand_uint& rhs) {
-        *this = *this % rhs;
-        return *this;
-    }
-
-
-
-
-
-
-
 
 
 
@@ -192,27 +182,22 @@ public:
     expand_uint operator&(const expand_uint& rhs) const {
         return expand_uint(UPPER & rhs.UPPER, LOWER & rhs.LOWER);
     }
-
     expand_uint& operator&=(const expand_uint& rhs) {
         UPPER &= rhs.UPPER;
         LOWER &= rhs.LOWER;
         return *this;
     }
-
     expand_uint operator|(const expand_uint& rhs) const {
         return expand_uint(UPPER | rhs.UPPER, LOWER | rhs.LOWER);
     }
-
     expand_uint& operator|=(const expand_uint& rhs) {
         UPPER |= rhs.UPPER;
         LOWER |= rhs.LOWER;
         return *this;
     }
-
     expand_uint operator^(const expand_uint& rhs) const {
         return expand_uint(UPPER ^ rhs.UPPER, LOWER ^ rhs.LOWER);
     }
-
     expand_uint& operator^=(const expand_uint& rhs) {
         UPPER ^= rhs.UPPER;
         LOWER ^= rhs.LOWER;
@@ -221,25 +206,6 @@ public:
 
     expand_uint operator~() const {
         return expand_uint(~UPPER, ~LOWER);
-    }
-    uint64_t bits() const {
-        uint64_t out = 0;
-        if (UPPER) {
-            out = 64;
-            uint64_t up = UPPER;
-            while (up) {
-                up >>= 1;
-                out++;
-            }
-        }
-        else {
-            uint64_t low = LOWER;
-            while (low) {
-                low >>= 1;
-                out++;
-            }
-        }
-        return out;
     }
     expand_uint& operator<<=(uint64_t shift) {
         if (shift >= expand_bits())
@@ -268,7 +234,6 @@ public:
     expand_uint operator<<(uint64_t shift) const {
         return expand_uint(*this) <<= shift;
     }
-
     expand_uint& operator>>=(uint64_t shift) {
         if (shift >= expand_bits())
             *this = exint_0;
@@ -296,52 +261,52 @@ public:
     expand_uint operator>>(uint64_t shift) const {
         return expand_uint(*this) >>= shift;
     }
+
     bool operator!() const {
         return !(bool)(UPPER | LOWER);
     }
-
     bool operator&&(const expand_uint& rhs) const {
         return ((bool)*this && rhs);
     }
-
     bool operator||(const expand_uint& rhs) const {
         return ((bool)*this || rhs);
     }
-
     bool operator==(const expand_uint& rhs) const {
         return ((UPPER == rhs.UPPER) && (LOWER == rhs.LOWER));
     }
-
     bool operator!=(const expand_uint& rhs) const {
         return ((UPPER != rhs.UPPER) | (LOWER != rhs.LOWER));
     }
-
     bool operator>(const expand_uint& rhs) const {
         if (UPPER == rhs.UPPER) {
             return (LOWER > rhs.LOWER);
         }
         return (UPPER > rhs.UPPER);
     }
-
     bool operator<(const expand_uint& rhs) const {
         if (UPPER == rhs.UPPER) {
             return (LOWER < rhs.LOWER);
         }
         return (UPPER < rhs.UPPER);
     }
-
     bool operator>=(const expand_uint& rhs) const {
         return ((*this > rhs) | (*this == rhs));
     }
-
     bool operator<=(const expand_uint& rhs) const {
         return ((*this < rhs) | (*this == rhs));
     }
 
+    expand_uint& operator++() {
+        return *this += exint_1;
+    }
+    expand_uint operator++(int) {
+        expand_uint temp(*this);
+        ++*this;
+        return temp;
+    }
     expand_uint operator+(const expand_uint& rhs) const {
         return expand_uint(UPPER + rhs.UPPER + ((LOWER + rhs.LOWER) < LOWER), LOWER + rhs.LOWER);
     }
-
     expand_uint& operator+=(const expand_uint& rhs) {
         UPPER += rhs.UPPER + ((LOWER + rhs.LOWER) < LOWER);
         LOWER += rhs.LOWER;
@@ -351,7 +316,6 @@ public:
     expand_uint operator-(const expand_uint& rhs) const {
         return expand_uint(UPPER - rhs.UPPER - ((LOWER - rhs.LOWER) > LOWER), LOWER - rhs.LOWER);
     }
-
     expand_uint& operator-=(const expand_uint& rhs) {
         UPPER -= rhs.UPPER + ((LOWER - rhs.LOWER) > LOWER);
         LOWER -= rhs.LOWER;
@@ -403,9 +367,25 @@ public:
         // combine components
         return expand_uint((first32 << 32) | second32, (third32 << 32) | fourth32);
     }
-
     expand_uint& operator*=(const expand_uint& rhs) {
         *this = *this * rhs;
+        return *this;
+    }
+
+
+    expand_uint operator/(const expand_uint& rhs) const {
+        return divmod(*this, rhs).first;
+    }
+    expand_uint& operator/=(const expand_uint& rhs) {
+        *this = *this / rhs;
+        return *this;
+    }
+
+    expand_uint operator%(const expand_uint& rhs) const {
+        return divmod(*this, rhs).second;
+    }
+    expand_uint& operator%=(const expand_uint& rhs) {
+        *this = *this % rhs;
         return *this;
     }
     explicit operator bool() const {
@@ -417,21 +397,28 @@ public:
     explicit operator uint16_t() const {
         return (uint16_t)LOWER;
     }
-
     explicit operator uint32_t() const {
         return (uint32_t)LOWER;
     }
-
     explicit operator uint64_t() const {
         return (uint64_t)LOWER;
     }
-    void set_to_max() {
-        UPPER = 0xffffffffffffffff;
-        LOWER = 0xffffffffffffffff;
+
+    template <uint64_t byt_expand>
+    operator expand_uint<byt_expand>() const {
+        std::string this_as_string = to_ansi_string();
+        expand_uint<byt_expand> test(this_as_string.c_str());
+
+        if (test.to_ansi_string() != this_as_string)
+            throw std::overflow_error("Fail convert from expand_uint<0> to expand_uint<" + std::to_string(byt_expand) + ">");
+
+        return test;
     }
 };
 const expand_uint<0> expand_uint<0>::exint_0 = 0;
 const expand_uint<0> expand_uint<0>::exint_1 = 1;
+expand_uint<0> const expand_uint<0>::min = 0;
+expand_uint<0> const expand_uint<0>::max = expand_uint<0>::get_max();
 
 template<uint64_t byte_expand>
 class expand_uint {
@@ -500,17 +487,24 @@ class expand_uint {
             rc[i] = digits[(w >> j) & 0x0f];
         return rc;
     }
+
+    expand_uint static get_max() {
+        return expand_uint(expand_uint<byte_expand - 1>::max, expand_uint<byte_expand - 1>::max);
+    }
+
+
 public:
+    static const expand_uint min;
+    static const expand_uint max;
+
     static const expand_uint<byte_expand> exint_0;
     static const expand_uint<byte_expand> exint_1;
     const expand_uint<byte_expand - 1>& upper() const {
         return UPPER;
     }
-
     const expand_uint<byte_expand - 1>& lower() const {
         return LOWER;
     }
-
     constexpr static uint64_t expand_bits() {
         return expand_uint<byte_expand - 1>::expand_bits() * 2;
     }
@@ -526,20 +520,19 @@ public:
     expand_uint(const char* str) : UPPER(0), LOWER(0) {
         expand_uint mult(10);
         size_t str_len = strlen(str);
+        expand_uint anti_overflow;
         for (size_t i = 0; i < str_len; i++) {
-            *this *= mult;
-            *this += str[i] - '0';
+            anti_overflow = *this * mult  + str[i] - '0';
+            if (anti_overflow < *this) break;
+            *this = anti_overflow;
         }
     }
-    template <typename T>
-    expand_uint(const T& rhs) : UPPER(0), LOWER(rhs)
-    {
-        if (std::is_signed<T>::value) {
-            if (rhs < 0) {
-                UPPER = -1;
-            }
-        }
-    }
+
+    expand_uint(const long long rhs) : UPPER(0), LOWER(rhs) {}
+    expand_uint(const unsigned long long rhs) : UPPER(0), LOWER(rhs) {}
+    expand_uint(const unsigned int rhs) : UPPER(0), LOWER(rhs) {}
+    expand_uint(const double rhs) : UPPER(0), LOWER(rhs) {}
+    expand_uint(const int rhs) : UPPER(0), LOWER(rhs) {}
 
     template <typename S, typename T>
     expand_uint(const S& upper_rhs, const T& lower_rhs) : LOWER(lower_rhs), UPPER(upper_rhs)
@@ -560,6 +553,10 @@ public:
         std::reverse(res.begin(), res.end());
         return res;
     }
+    std::string to_ansi_string() const{
+        return expand_uint(*this).to_ansi_string();
+    }
+
     std::string to_hex_str() {
         uint64_t* proxy = ((uint64_t*)this);
         std::stringstream stream;
@@ -573,33 +570,6 @@ public:
     expand_uint& operator=(const expand_uint& rhs) = default;
     expand_uint& operator=(expand_uint&& rhs) = default;
 
-    expand_uint& operator++() {
-        return *this += exint_1;
-    }
-    expand_uint operator++(int) {
-        expand_uint temp(*this);
-        *this += exint_1;
-        return temp;
-    }
-
-    expand_uint operator/(const expand_uint& rhs) const {
-        return divmod(*this, rhs).first;
-    }
-
-    expand_uint operator%(const expand_uint& rhs) const {
-        return divmod(*this, rhs).second;
-    }
-
-    expand_uint& operator/=(const expand_uint& rhs) {
-        *this = divmod(*this, rhs).first;
-        return *this;
-    }
-
-    expand_uint& operator%=(const expand_uint& rhs) {
-        *this = divmod(*this, rhs).second;
-        return *this;
-    }
-
 
 
 
@@ -612,7 +582,6 @@ public:
     expand_uint operator&(const expand_uint& rhs) const {
         return expand_uint(UPPER & rhs.UPPER, LOWER & rhs.LOWER);
     }
-
     expand_uint& operator&=(const expand_uint& rhs) {
         UPPER &= rhs.UPPER;
         LOWER &= rhs.LOWER;
@@ -622,7 +591,6 @@ public:
     expand_uint operator|(const expand_uint& rhs) const {
         return expand_uint(UPPER | rhs.UPPER, LOWER | rhs.LOWER);
     }
-
     expand_uint& operator|=(const expand_uint& rhs) {
         UPPER |= rhs.UPPER;
         LOWER |= rhs.LOWER;
@@ -632,7 +600,6 @@ public:
     expand_uint operator^(const expand_uint& rhs) const {
         return expand_uint(UPPER ^ rhs.UPPER, LOWER ^ rhs.LOWER);
     }
-
     expand_uint& operator^=(const expand_uint& rhs) {
         UPPER ^= rhs.UPPER;
         LOWER ^= rhs.LOWER;
@@ -673,7 +640,6 @@ public:
         return expand_uint(*this) <<= shift;
     }
 
-
     expand_uint& operator>>=(uint64_t shift) {
         if (shift >= expand_bits())
             *this = exint_0;
@@ -701,68 +667,76 @@ public:
     expand_uint operator>>(uint64_t shift) const {
         return expand_uint(*this) >>= shift;
     }
+
+
     bool operator!() const {
         return !(bool)(UPPER | LOWER);
     }
-
     bool operator&&(const expand_uint& rhs) const {
         return ((bool)*this && rhs);
     }
-
     bool operator||(const expand_uint& rhs) const {
         return ((bool)*this || rhs);
     }
-
     bool operator==(const expand_uint& rhs) const {
         return ((UPPER == rhs.UPPER) && (LOWER == rhs.LOWER));
     }
-
     bool operator!=(const expand_uint& rhs) const {
         return ((UPPER != rhs.UPPER) | (LOWER != rhs.LOWER));
     }
-
     bool operator>(const expand_uint& rhs) const {
         if (UPPER == rhs.UPPER) {
             return (LOWER > rhs.LOWER);
         }
         return (UPPER > rhs.UPPER);
     }
-
     bool operator<(const expand_uint& rhs) const {
         if (UPPER == rhs.UPPER) {
             return (LOWER < rhs.LOWER);
         }
         return (UPPER < rhs.UPPER);
     }
-
     bool operator>=(const expand_uint& rhs) const {
         return ((*this > rhs) | (*this == rhs));
     }
-
     bool operator<=(const expand_uint& rhs) const {
         return ((*this < rhs) | (*this == rhs));
     }
 
+
+    expand_uint& operator++() {
+        return *this += exint_1;
+    }
+    expand_uint operator++(int) {
+        expand_uint temp(*this);
+        *this += exint_1;
+        return temp;
+    }
+    expand_uint operator+(const expand_uint&& rhs) const { return *this + rhs; }
+    expand_uint operator-(const expand_uint&& rhs) const { return *this - rhs; }
     expand_uint operator+(const expand_uint& rhs) const {
         return expand_uint(*this) += rhs;
     }
     expand_uint operator-(const expand_uint& rhs) const {
         return expand_uint(*this) -= rhs;
     }
-
+    expand_uint& operator+=(const expand_uint&& rhs) const { return *this += rhs; }
+    expand_uint& operator-=(const expand_uint&& rhs) const { return *this -= rhs; }
     expand_uint& operator+=(const expand_uint& rhs) {
         UPPER += rhs.UPPER;
-        UPPER += ((LOWER + rhs.LOWER) < LOWER) ? exint_1 : exint_0;
+        UPPER += ((LOWER + rhs.LOWER) < LOWER) ? expand_uint<byte_expand - 1>::exint_1 : expand_uint<byte_expand - 1>::exint_0;
         LOWER += rhs.LOWER;
         return *this;
     }
     expand_uint& operator-=(const expand_uint& rhs) {
         UPPER -= rhs.UPPER;
-        UPPER -= ((LOWER - rhs.LOWER) > LOWER) ? exint_1 : exint_0;
+        UPPER -= ((LOWER - rhs.LOWER) > LOWER) ? expand_uint<byte_expand - 1>::exint_1 : expand_uint<byte_expand - 1>::exint_0;
         LOWER -= rhs.LOWER;
         return *this;
     }
 
+    expand_uint operator*(const expand_uint&& rhs) const { return *this * rhs; }
+    expand_uint& operator*=(const expand_uint&& rhs) const { return *this *= rhs; }
     expand_uint operator*(const expand_uint& rhs) const {
         // split values into 4 64-bit parts
         expand_uint<byte_expand - 1> products[4][4];
@@ -793,22 +767,37 @@ public:
         // fourth row
         first64 += expand_uint<byte_expand - 1>(products[3][3].lower());
 
-
-
-
-
         // combines the values, taking care of carry over
         return expand_uint(first64 << expand_bits_sub_childs(), exint_0) +
             expand_uint(third64.upper(), third64 << expand_bits_sub_childs()) +
             expand_uint(second64, exint_0) +
             expand_uint(fourth64);
     }
-
-
     expand_uint& operator*=(const expand_uint& rhs) {
         *this = *this * rhs;
         return *this;
     }
+
+    expand_uint operator/(const expand_uint&& rhs) const { return *this / rhs; }
+    expand_uint& operator/=(const expand_uint&& rhs) const { return *this /= rhs; }
+    expand_uint operator/(const expand_uint& rhs) const {
+        return divmod(*this, rhs).first;
+    }
+    expand_uint& operator/=(const expand_uint& rhs) {
+        *this = divmod(*this, rhs).first;
+        return *this;
+    }
+
+    expand_uint operator%(const expand_uint&& rhs) const { return *this % rhs; }
+    expand_uint& operator%=(const expand_uint&& rhs) const { return *this %= rhs; }
+    expand_uint operator%(const expand_uint& rhs) const {
+        return divmod(*this, rhs).second;
+    }
+    expand_uint& operator%=(const expand_uint& rhs) {
+        *this = divmod(*this, rhs).second;
+        return *this;
+    }
+
     explicit operator bool() const {
         return (bool)(UPPER | LOWER);
     }
@@ -818,17 +807,22 @@ public:
     explicit operator uint16_t() const {
         return (uint16_t)LOWER;
     }
-
     explicit operator uint32_t() const {
         return (uint32_t)LOWER;
     }
-
     explicit operator uint64_t() const {
         return (uint64_t)LOWER;
     }
-    void set_to_max() {
-        UPPER.set_to_max();
-        LOWER.set_to_max();
+
+    template <uint64_t byt_expand>
+    operator expand_uint<byt_expand>() const {
+        std::string this_as_string = to_ansi_string();
+        expand_uint<byt_expand> test(this_as_string.c_str());
+
+        if (test.to_ansi_string() != this_as_string)
+            throw std::overflow_error("Fail convert from expand_uint<" + std::to_string(byte_expand) + "> to expand_uint<" + std::to_string(byt_expand) + ">");
+
+        return test;
     }
 };
 template<uint64_t byte_expand>
@@ -836,6 +830,12 @@ const expand_uint<byte_expand> expand_uint<byte_expand>::exint_0 = 0;
 template<uint64_t byte_expand>
 const expand_uint<byte_expand> expand_uint<byte_expand>::exint_1 = 1;
 
+
+template<uint64_t byte_expand>
+expand_uint<byte_expand> const expand_uint<byte_expand>::min = 0;
+
+template<uint64_t byte_expand>
+expand_uint<byte_expand> const expand_uint<byte_expand>::max = expand_uint<byte_expand>::get_max();
 typedef expand_uint<0> uint128_ext;
 typedef expand_uint<1> uint256_ext;
 typedef expand_uint<2> uint512_ext;
@@ -859,10 +859,8 @@ typedef expand_uint<8> uint4096_exb;
 
 
 
-
 template<uint64_t byte_expand>
 class expand_int {
-
     expand_int& switch_my_siqn() {
         val.unsigned_int = ~val.unsigned_int;
         val.unsigned_int += expand_uint<byte_expand>::exint_1;
@@ -928,7 +926,7 @@ class expand_int {
     }
     static expand_int get_max() {
         expand_int tmp;
-        tmp.val.unsigned_int.set_to_max();
+        tmp.val.unsigned_int = expand_uint<byte_expand>::max;
         tmp.val.is_minus = 0;
         return tmp;
     }
@@ -946,18 +944,12 @@ public:
         bool set_minus = 0;
         if (*str++ == '-')
             set_minus = 1;
-        if (!set_minus)
-            str--;
+        else str--;
         val.unsigned_int = expand_uint<byte_expand>(str);
         if (set_minus) {
             switch_to_siqn();
             val.is_minus = 1;
         }
-    }
-    template <typename T>
-    expand_int(const T& rhs) 
-    {
-        val.unsigned_int = rhs;
     }
     std::string to_ansi_string() {
         if (val.is_minus)
@@ -974,95 +966,33 @@ public:
     expand_int& operator=(const expand_int & rhs) = default;
     expand_int& operator=(expand_int && rhs) = default;
 
-    expand_int& operator++() {
-        if (val.is_minus) {
-            switch_my_siqn().val.unsigned_int += expand_uint<byte_expand>::exint_1;
-            switch_my_siqn();
-        }
-        else 
-            val.unsigned_int++;
-        return *this;
-    }
-    expand_int operator++(int) {
-        expand_int temp(*this);
-        ++*this;
-        return temp;
-    }
-
-    expand_int operator/(const expand_int & rhs) const {
-        return expand_int(*this) /= rhs;
-    }
-
-    expand_int operator%(const expand_int & rhs) const {
-        return expand_int(*this) %= rhs;
-    }
-
-    expand_int& operator/=(const expand_int & rhs) {
-        if (val.is_minus && rhs.val.is_minus)
-            switch_my_siqn().val.unsigned_int /= rhs.switch_my_siqn().val.unsigned_int;
-        else if (val.is_minus || rhs.val.is_minus) {
-            switch_to_unsiqn().val.unsigned_int /= rhs.switch_to_unsiqn().val.unsigned_int;
-            switch_my_siqn();
-        }
-        else
-            val.unsigned_int /= rhs.val.unsigned_int;
-        return *this;
-    }
-
-    expand_int& operator%=(const expand_int & rhs) {
-        if (val.is_minus && rhs.val.is_minus)
-            switch_my_siqn().val.unsigned_int %= rhs.switch_my_siqn().val.unsigned_int;
-        else if (val.is_minus || rhs.val.is_minus) {
-            switch_to_unsiqn().val.unsigned_int %= rhs.switch_to_unsiqn().val.unsigned_int;
-            switch_my_siqn();
-        }
-        else
-            val.unsigned_int %= rhs.val.unsigned_int;
-        return *this;
-    }
-
-
-
-
-
-
-
-
-
 
     expand_int operator&(const expand_int & rhs) const {
         return expand_int(*this) &= rhs;
     }
-
     expand_int& operator&=(const expand_int & rhs) {
         val.unsigned_int &= rhs.val.unsigned_int;
         return *this;
     }
-
     expand_int operator|(const expand_int & rhs) const {
         return expand_int(*this) |= rhs;
     }
-
     expand_int& operator|=(const expand_int & rhs) {
         val.unsigned_int |= rhs.val.unsigned_int;
         return *this;
     }
-
     expand_int operator^(const expand_int & rhs) const {
         return expand_int(*this) ^= rhs;
     }
-
     expand_int& operator^=(const expand_int & rhs) {
         val.unsigned_int ^= rhs.val.unsigned_int;
         return *this;
     }
-
     expand_int operator~() const {
         expand_int tmp(*this);
         ~tmp.val.unsigned_int;
         return tmp;
     }
-
 
 
     expand_int& operator<<=(uint64_t shift) {
@@ -1072,8 +1002,6 @@ public:
     expand_int operator<<(uint64_t shift) const {
         return expand_int(*this) <<= shift;
     }
-
-
     expand_int& operator>>=(uint64_t shift) {
         val.unsigned_int >>= shift;
         return *this;
@@ -1081,48 +1009,70 @@ public:
     expand_int operator>>(uint64_t shift) const {
         return expand_int(*this) >>= shift;
     }
+
     bool operator!() const {
         return !val.unsigned_int;
     }
-
     bool operator&&(const expand_int & rhs) const {
         return ((bool)*this && rhs);
     }
-
     bool operator||(const expand_int & rhs) const {
         return ((bool)*this || rhs);
     }
-
     bool operator==(const expand_int & rhs) const {
         return val.unsigned_int == rhs.val.unsigned_int;
     }
-
     bool operator!=(const expand_int & rhs) const {
         return val.unsigned_int != rhs.val.unsigned_int;
     }
-
     bool operator>(const expand_int & rhs) const {
         if (val.is_minus && !rhs.val.is_minus)
             return false;
         if (!val.is_minus && rhs.val.is_minus)
             return true;
-        return expand_int(*this).switch_to_siqn().val.unsigned_int > rhs.switch_to_siqn().val.unsigned_int;
+        return expand_int(*this).switch_to_unsiqn().val.unsigned_int > rhs.switch_to_unsiqn().val.unsigned_int;
     }
-
     bool operator<(const expand_int & rhs) const {
         if (val.is_minus && !rhs.val.is_minus)
             return true;
         if (!val.is_minus && rhs.val.is_minus)
             return false;
-        return expand_int(*this).switch_to_siqn().val.unsigned_int < rhs.switch_to_siqn().val.unsigned_int;
+        return expand_int(*this).switch_to_unsiqn().val.unsigned_int < rhs.switch_to_unsiqn().val.unsigned_int;
     }
-
     bool operator>=(const expand_int & rhs) const {
         return ((*this > rhs) | (*this == rhs));
     }
-
     bool operator<=(const expand_int & rhs) const {
         return ((*this < rhs) | (*this == rhs));
+    }
+
+    expand_int& operator++() {
+        if (val.is_minus) {
+            switch_my_siqn().val.unsigned_int += expand_uint<byte_expand>::exint_1;
+            switch_my_siqn();
+        }
+        else
+            val.unsigned_int++;
+        return *this;
+    }
+    expand_int operator++(int) {
+        expand_int temp(*this);
+        ++* this;
+        return temp;
+    }
+    expand_int& operator--() {
+        if (val.is_minus) {
+            switch_my_siqn().val.unsigned_int -= expand_uint<byte_expand>::exint_1;
+            switch_my_siqn();
+        }
+        else
+            val.unsigned_int--;
+        return *this;
+    }
+    expand_int operator--(int) {
+        expand_int temp(*this);
+        --* this;
+        return temp;
     }
 
     expand_int operator+(const expand_int & rhs) const {
@@ -1186,8 +1136,6 @@ public:
     expand_int operator*(const expand_int & rhs) const {
         return expand_int(*this) *= rhs;
     }
-
-
     expand_int& operator*=(const expand_int & rhs) {
         if (val.is_minus && rhs.val.is_minus)
             switch_my_siqn().val.unsigned_int *= rhs.switch_my_siqn().val.unsigned_int;
@@ -1201,13 +1149,42 @@ public:
     }
 
 
+    expand_int operator/(const expand_int& rhs) const {
+        return expand_int(*this) /= rhs;
+    }
+    expand_int& operator/=(const expand_int& rhs) {
+        if (val.is_minus && rhs.val.is_minus)
+            switch_my_siqn().val.unsigned_int /= rhs.switch_my_siqn().val.unsigned_int;
+        else if (val.is_minus || rhs.val.is_minus) {
+            switch_to_unsiqn().val.unsigned_int /= rhs.switch_to_unsiqn().val.unsigned_int;
+            switch_my_siqn();
+        }
+        else
+            val.unsigned_int /= rhs.val.unsigned_int;
+        return *this;
+    }
+
+    expand_int operator%(const expand_int& rhs) const {
+        return expand_int(*this) %= rhs;
+    }
+    expand_int& operator%=(const expand_int& rhs) {
+        if (val.is_minus && rhs.val.is_minus)
+            switch_my_siqn().val.unsigned_int %= rhs.switch_my_siqn().val.unsigned_int;
+        else if (val.is_minus || rhs.val.is_minus) {
+            switch_to_unsiqn().val.unsigned_int %= rhs.switch_to_unsiqn().val.unsigned_int;
+            switch_my_siqn();
+        }
+        else
+            val.unsigned_int %= rhs.val.unsigned_int;
+        return *this;
+    }
 
 
     expand_int operator+() const {
-        return expand_int(*this).switch_to_unsiqn();
+        return switch_to_unsiqn();
     }
-    expand_int  operator-() const {
-        return expand_int(*this).switch_to_siqn();
+    expand_int operator-() const {
+        return switch_to_siqn();
     }
 
 
@@ -1220,13 +1197,26 @@ public:
     explicit operator uint16_t() const {
         return (uint16_t)val.unsigned_int;
     }
-
     explicit operator uint32_t() const {
         return (uint32_t)val.unsigned_int;
     }
-
     explicit operator uint64_t() const {
         return (uint64_t)val.unsigned_int;
+    }
+    template <uint64_t byt_expand>
+    explicit operator expand_uint<byt_expand>() const {
+        return expand_uint<byt_expand>(val.unsigned_int);
+    }
+
+    template <uint64_t byt_expand>
+    operator expand_int<byt_expand>() const {
+        std::string this_as_string = to_ansi_string();
+        expand_int<byt_expand> test(this_as_string);
+
+        if (test.to_ansi_string() != this_as_string)
+            throw std::overflow_error("Fail convert from expand_int<" + std::to_string(byte_expand) + "> to expand_int<" + std::to_string(byt_expand) + ">");
+
+        return test;
     }
 };
 
@@ -1256,7 +1246,6 @@ typedef expand_int<5> int512_exb;
 typedef expand_int<6> int1024_exb;
 typedef expand_int<7> int2048_exb;
 typedef expand_int<8> int4096_exb;
-
 
 
 
@@ -1301,11 +1290,14 @@ class expand_real {
 
 
     static std::vector<std::string> split_dot(std::string value) {
-        static const std::regex rdelim{ "." };
-        std::vector<std::string> strPairs{
-                std::sregex_token_iterator(value.begin(), value.end(), rdelim, -1),
-                std::sregex_token_iterator()
-        };
+        std::vector<std::string> strPairs;
+        size_t pos = 0;
+        if((pos = value.find(".")) != std::string::npos) {
+            strPairs.push_back(value.substr(0, pos));
+            value.erase(0, pos + 1);
+        }
+        if (!value.empty())
+            strPairs.push_back(value);
         return strPairs;
     }
 
@@ -1396,7 +1388,7 @@ class expand_real {
     static expand_real get_min() {
         expand_real tmp = 0;
         tmp.val.signed_int = expand_int<byte_expand>::min;
-        tmp.val.dot_pos = -1;
+        tmp.val.dot_pos = 0;
         return tmp;
     }
     static expand_real get_max() {
@@ -1439,7 +1431,7 @@ public:
     template <typename T>
     expand_real(const T& rhs)
     {
-        val.signed_int = rhs;
+        val.signed_int = (expand_int<byte_expand>)rhs;
     }
     std::string to_ansi_string() {
         uint64_t tmp = temp_denormalize_struct();
@@ -1472,13 +1464,6 @@ public:
 
     expand_real& operator=(const expand_real& rhs) = default;
     expand_real& operator=(expand_real&& rhs) = default;
-
-
-
-
-
-
-
 
     expand_real operator&(const expand_real& rhs) const {
         return expand_real(*this) &= rhs;
@@ -1660,9 +1645,6 @@ public:
         return *this;
     }
 
-
-
-
     expand_real operator/(const expand_real& rhs) const {
         return expand_real(*this) /= rhs;
     }
@@ -1695,6 +1677,26 @@ public:
     }
     explicit operator uint64_t() const {
         return (uint64_t)val.signed_int;
+    }
+
+
+    template <uint64_t byt_expand>
+    explicit operator expand_int<byt_expand>() const {
+        return val.signed_int;
+    }
+    template <uint64_t byt_expand>
+    explicit operator expand_uint<byt_expand>() const {
+        return expand_uint<byt_expand>(val.signed_int);
+    }
+    template <uint64_t byt_expand>
+    operator expand_real<byt_expand>() const {
+        std::string this_as_string = to_ansi_string();
+        expand_real<byt_expand> test(this_as_string);
+
+        if (test.to_ansi_string() != this_as_string)
+            throw std::overflow_error("Fail convert from expand_int<" + std::to_string(byte_expand) + "> to expand_int<" + std::to_string(byt_expand) + ">");
+
+        return test;
     }
 };
 
